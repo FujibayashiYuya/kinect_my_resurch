@@ -14,8 +14,12 @@ using System.Windows.Navigation;
 using System.Windows.Shapes;
 using System.Diagnostics;
 using Microsoft.Kinect;
+using Alea;
+using Alea.Parallel;
+using System.IO;
+using Stream = System.IO.Stream;
 
-namespace kinect_my_resurch
+namespace kinect_test
 {
     /// <summary>
     /// MainWindow.xaml の相互作用ロジック
@@ -26,6 +30,7 @@ namespace kinect_my_resurch
         private readonly int cbytesPerPixel = 4;
         //本体への参照
         KinectSensor kinect;
+        CoordinateMapper mapper;
         //取得するカラー画像の詳細情報
         FrameDescription colorFrameDescription;
         //取得するカラー画像のフォーマット
@@ -46,6 +51,11 @@ namespace kinect_my_resurch
         /// Map depth range to byte range
         /// </summary>
         private const int MapDepthToByte = 8000 / 256;
+
+        //Mapperの作成（DepthとColorの位置合わせ）
+        BitmapSource colorBitmap;
+        BitmapSource depthBitmap;
+
 
         public MainWindow()
         {
@@ -101,26 +111,29 @@ namespace kinect_my_resurch
 
             //画像情報を確保するバッファ（領域）を確保
             //高さ*幅*画素あたりのデータ量
-            byte[] colors = new byte[this.colorFrameDescription.Width
-                * this.colorFrameDescription.Height * this.colorFrameDescription.BytesPerPixel];
+            byte[] colors = new byte[this.depthFrameDescription.Width
+                * this.depthFrameDescription.Height * this.colorFrameDescription.BytesPerPixel];
 
             //用意した領域に画素情報を複製
-            colorFrame.CopyConvertedFrameDataToArray(colors, this.colorImageFormat);
+            //colorFrame.CopyConvertedFrameDataToArray(colors, this.colorImageFormat);
 
             //画素情報をビットマップとして扱う
-            BitmapSource bitmapSource = BitmapSource.Create(this.colorFrameDescription.Width,
-                this.colorFrameDescription.Height,
-                96, 96, PixelFormats.Bgra32, null, colors, this.colorFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+            BitmapSource bitmapSource = BitmapSource.Create(this.depthFrameDescription.Width,
+                this.depthFrameDescription.Height,
+                96, 96, PixelFormats.Bgra32, null, colors, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
 
-            //this.canvas.Background = new ImageBrush(bitmapSource);
+            //this.Images2.Source = bitmapSource;
 
             colorFrame.Dispose();
         }
 
         private void Reader_DepthFrameArrived(object sender, DepthFrameArrivedEventArgs e)
         {
+            var sw = new System.Diagnostics.Stopwatch();
+            sw.Start();
             ushort minDepth = 0;
             ushort maxDepth = 0;
+            //DepthSpacePoint depthPoint = kinect.CoordinateMapper.MapCameraPointToDepthSpace();
 
             //フレームの取得
             DepthFrame depthFrame = e.FrameReference.AcquireFrame();
@@ -133,6 +146,21 @@ namespace kinect_my_resurch
             depthFrame.CopyFrameDataToArray(this.depthFrameData);
             minDepth = depthFrame.DepthMinReliableDistance;
             maxDepth = depthFrame.DepthMaxReliableDistance;
+
+            //depth座標に対応するcolor座標を取得
+            var colorSpace = new ColorSpacePoint[depthFrameDescription.LengthInPixels];//DepthSpacePointは深度画像のピクセル画像.xy
+            mapper.MapDepthFrameToColorSpace(depthFrameData, colorSpace);
+
+            for (int i = 0; i < this.depthFrameData.Length; ++i)
+            {
+                ushort depth = this.depthFrameData[i];
+                int image_x = i % 512;
+                int image_y = i / 512;
+
+                int world_z = depth;
+                int world_x = image_x * world_z;
+            }
+
             int colorPixelIndex = 0;
             for (int i = 0; i < this.depthFrameData.Length; ++i)
             {
@@ -156,11 +184,25 @@ namespace kinect_my_resurch
                 this.depthPixels[colorPixelIndex++] = 255;
             }
 
-            Images.Source = BitmapSource.Create(this.depthFrameDescription.Width,
+            
+            BitmapSource bitmap_d = BitmapSource.Create(this.depthFrameDescription.Width,
                 this.depthFrameDescription.Height,
                 96, 96, PixelFormats.Bgra32, null, depthPixels, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
-        }
 
+            Images.Source = bitmap_d;
+
+            // BitmapSourceを保存する
+            if (sw.Elapsed.Seconds < 10)
+            {
+                using (Stream stream = new FileStream("test.png", FileMode.Create))
+                {
+                    PngBitmapEncoder encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(bitmap_d));
+                    encoder.Save(stream);
+                }
+            }
+        }
+        
 
         /// <summary>
         /// この WPF アプリケーションが終了するときに実行されるメソッド。
@@ -171,7 +213,6 @@ namespace kinect_my_resurch
         protected override void OnClosed(EventArgs e)
         {
             base.OnClosed(e);
-
             //カラー画像の取得を中止して、関連するリソースを破棄する。
             if (this.colorFrameReader != null)
             {

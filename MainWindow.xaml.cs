@@ -2,10 +2,12 @@ using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Kinect;
 using OpenCvSharp;
+using OpenCvSharp.WpfExtensions;
 using System.IO;
 using Stream = System.IO.Stream;
 
@@ -61,6 +63,12 @@ namespace kinect_test
                 this.multiReader = this.kinect.OpenMultiSourceFrameReader(FrameSourceTypes.Color | FrameSourceTypes.Depth);
                 this.multiReader.MultiSourceFrameArrived += multiReader_MultiSourceFrameArrived;
                 kinect.Open();
+                
+                //カラー画像深度画像の平滑化
+                //深度画像を法線情報に変換
+                //法線情報とカラー情報をまとめる
+                //Kmeans法でカラー情報の分離
+                //最小二乗法で法線方向の照度を求める
             }
             catch
             {
@@ -92,6 +100,7 @@ namespace kinect_test
             //描写
             //Depthのサイズで作成
             var colorImageBuffer = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            var depthImageBuffer = new byte[depthFrameDescription.LengthInPixels];
             //Depth座標系に対応するカラー座標系の取得
             var colorSpace = new ColorSpacePoint[depthFrameDescription.LengthInPixels];
             mapper.MapDepthFrameToColorSpace(depthFrameData, colorSpace);
@@ -114,17 +123,30 @@ namespace kinect_test
                 colorImageBuffer[colorImageIndex + 1] = colorFrameData[colorBufferIndex + 1];
                 colorImageBuffer[colorImageIndex + 2] = colorFrameData[colorBufferIndex + 2];
             }
-            Images.Source = BitmapSource.Create(this.depthFrameDescription.Width,
+            BitmapSource test = BitmapSource.Create(this.depthFrameDescription.Width,
                 this.depthFrameDescription.Height,
                 96, 96, PixelFormats.Bgr32, null, colorImageBuffer, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+
+            Images.Source = test;
             colorFrame.Dispose();
             depthFrame.Dispose();
+        }
+
+        //画像の平滑化
+        private void ImageProgress()
+        {
+            Mat img;
+        }
+
+        void OnClick(object sender, RoutedEventArgs e)
+        {
+             MessageBox.Show("test");
         }
 
         const int CLASS_NUM = 16;
         private void Kmeans_segmentation()
         {
-            Cv2.Kmeans;
+            //Cv2.Kmeans;
         }
 
         /// <summary>

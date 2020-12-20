@@ -39,6 +39,9 @@ namespace kinect_test
         /// Map depth range to byte range
         /// </summary>
         private const int MapDepthToByte = 8000 / 256;
+        
+
+        bool click;
 
         public MainWindow()
         {
@@ -100,7 +103,7 @@ namespace kinect_test
             //描写
             //Depthのサイズで作成
             var colorImageBuffer = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-            var depthImageBuffer = new byte[depthFrameDescription.LengthInPixels];
+            var depthImageBuffer = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             //Depth座標系に対応するカラー座標系の取得
             var colorSpace = new ColorSpacePoint[depthFrameDescription.LengthInPixels];
             mapper.MapDepthFrameToColorSpace(depthFrameData, colorSpace);
@@ -122,12 +125,36 @@ namespace kinect_test
                 colorImageBuffer[colorImageIndex + 0] = colorFrameData[colorBufferIndex + 0];
                 colorImageBuffer[colorImageIndex + 1] = colorFrameData[colorBufferIndex + 1];
                 colorImageBuffer[colorImageIndex + 2] = colorFrameData[colorBufferIndex + 2];
+
+                //深度画像
+                byte intensity = (byte)(depthFrameData[i] % 255);
+                depthImageBuffer[colorImageIndex++] = intensity;
+                depthImageBuffer[colorImageIndex++] = intensity;
+                depthImageBuffer[colorImageIndex++] = intensity;
             }
             BitmapSource test = BitmapSource.Create(this.depthFrameDescription.Width,
                 this.depthFrameDescription.Height,
                 96, 96, PixelFormats.Bgr32, null, colorImageBuffer, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
 
+            BitmapSource depth = BitmapSource.Create(this.depthFrameDescription.Width,
+                this.depthFrameDescription.Height,
+                96, 96, PixelFormats.Bgr32, null, depthImageBuffer, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+
             Images.Source = test;
+            Images2.Source = depth;
+            if(click == true)
+            {
+                click = false;
+                MessageBox.Show("test");
+                // BitmapSourceを保存する
+                using (Stream stream = new FileStream("test.png", FileMode.Create))
+                {
+                    PngBitmapEncoder encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(depth));
+                    encoder.Save(stream);
+                }
+
+            }
             colorFrame.Dispose();
             depthFrame.Dispose();
         }
@@ -140,7 +167,7 @@ namespace kinect_test
 
         void OnClick(object sender, RoutedEventArgs e)
         {
-             MessageBox.Show("test");
+            click = true;
         }
 
         const int CLASS_NUM = 16;

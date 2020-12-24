@@ -39,6 +39,9 @@ namespace kinect_test
         /// Map depth range to byte range
         /// </summary>
         private const int MapDepthToByte = 8000 / 256;
+
+        //内部データ
+        private CameraIntrinsics calibrationData;
         
 
         bool click;
@@ -93,8 +96,7 @@ namespace kinect_test
             var colorFrame = multiFrame.ColorFrameReference.AcquireFrame();
             var depthFrame = multiFrame.DepthFrameReference.AcquireFrame();
             if (colorFrame == null || depthFrame == null)
-            {
-                MessageBox.Show("フレームがありません");
+            {                
                 return;
             }
             colorFrame.CopyConvertedFrameDataToArray(colorFrameData, this.colorImageFormat);
@@ -145,15 +147,28 @@ namespace kinect_test
             if(click == true)
             {
                 click = false;
+                calibrationData = mapper.GetDepthCameraIntrinsics();
                 MessageBox.Show("test");
                 // BitmapSourceを保存する
+                /*
                 using (Stream stream = new FileStream("test.png", FileMode.Create))
                 {
                     PngBitmapEncoder encoder = new PngBitmapEncoder();
                     encoder.Frames.Add(BitmapFrame.Create(depth));
                     encoder.Save(stream);
+                }*/
+                Mat src = BitmapSourceConverter.ToMat(depth);
+                Cv2.ImShow("Test", src);
+                var depthData = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+                for (int i = 0; i < this.depthFrameData.Length; ++i)
+                {
+                    int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
+                    depthData[colorImageIndex++] = (byte)depthFrameData[i];//x
+                    depthData[colorImageIndex++] = (byte)depthFrameData[i];//y
+                    depthData[colorImageIndex++] = (byte)depthFrameData[i];//z
                 }
-
+                float ttt = calibrationData.PrincipalPointY;
+                Console.WriteLine(Convert.ToString(ttt));
             }
             colorFrame.Dispose();
             depthFrame.Dispose();

@@ -42,7 +42,7 @@ namespace kinect_test
 
         //内部データ
         private CameraIntrinsics calibrationData;
-        
+
 
         bool click;
 
@@ -69,7 +69,7 @@ namespace kinect_test
                 this.multiReader = this.kinect.OpenMultiSourceFrameReader(FrameSourceTypes.Color | FrameSourceTypes.Depth);
                 this.multiReader.MultiSourceFrameArrived += multiReader_MultiSourceFrameArrived;
                 kinect.Open();
-                
+
                 //カラー画像深度画像の平滑化
                 //深度画像を法線情報に変換
                 //法線情報とカラー情報をまとめる
@@ -96,7 +96,7 @@ namespace kinect_test
             var colorFrame = multiFrame.ColorFrameReference.AcquireFrame();
             var depthFrame = multiFrame.DepthFrameReference.AcquireFrame();
             if (colorFrame == null || depthFrame == null)
-            {                
+            {
                 return;
             }
             colorFrame.CopyConvertedFrameDataToArray(colorFrameData, this.colorImageFormat);
@@ -144,7 +144,8 @@ namespace kinect_test
 
             Images.Source = test;
             Images2.Source = depth;
-            if(click == true)
+
+            if (click == true)
             {
                 click = false;
                 calibrationData = mapper.GetDepthCameraIntrinsics();
@@ -158,18 +159,43 @@ namespace kinect_test
                     encoder.Save(stream);
                 }*/
                 Mat src = BitmapSourceConverter.ToMat(depth);
-                Cv2.ImShow("Test", src);
+                
+                //頂点マップの作成
                 var depthData = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
                 for (int i = 0; i < this.depthFrameData.Length; ++i)
                 {
                     int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
-                    depthData[colorImageIndex++] = (byte)depthFrameData[i];//x
-                    depthData[colorImageIndex++] = (byte)depthFrameData[i];//y
+                    //テクスチャ座標
+                    var im_x = i % depthFrameDescription.Width;
+                    var im_y = i / depthFrameDescription.Width;
+
+                    //uv座標
+                    var u = im_x - depthFrameDescription.Width * 0.5;
+                    var v = depthFrameDescription.Height * 0.5 - im_y;
+
+                    //正規化用の座標最大値・最小値
+                    var range_x = depthFrameDescription.Width / calibrationData.FocalLengthX * 4500;
+                    var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
+
+                    //頂点座標
+                    depthData[colorImageIndex++] = (byte)((u - calibrationData.PrincipalPointX) / calibrationData.FocalLengthX * depthFrameData[i]);//x
+                    depthData[colorImageIndex++] = (byte)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * depthFrameData[i]);//y
                     depthData[colorImageIndex++] = (byte)depthFrameData[i];//z
                 }
-                float ttt = calibrationData.PrincipalPointY;
-                Console.WriteLine(Convert.ToString(ttt));
-            }
+
+                //法線マップの作成
+                var normalData = new float[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+                for (int i = 0; i < this.depthFrameData.Length; ++i)
+                {
+                    int normalImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
+                    //外積はベクトルで計算したほうが楽（書き直し）
+                    normalData[normalImageIndex + 0] = depthData[normalImageIndex + 3] - depthData[normalImageIndex - 3];
+                    normalData[normalImageIndex + 1] = depthData[normalImageIndex + depthFrameDescription.Width * 3] - depthData[normalImageIndex - depthFrameDescription.Width * 3];
+                    normalData[normalImageIndex + 2] = 
+                }
+
+
+                }
             colorFrame.Dispose();
             depthFrame.Dispose();
         }

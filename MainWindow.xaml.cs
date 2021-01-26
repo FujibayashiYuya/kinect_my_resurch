@@ -46,6 +46,14 @@ namespace kinect_test
 
         bool click;
 
+        //流れ
+        //カラー画像・深度画像の取得
+        //カラー画像深度画像の平滑化（平滑化してから法線を求める）
+        //深度画像を法線情報に変換
+        //法線情報とカラー情報をまとめる
+        //Kmeans法でカラー情報の分離
+        //最小二乗法で法線方向の照度を求める
+
         public MainWindow()
         {
             InitializeComponent();
@@ -69,12 +77,6 @@ namespace kinect_test
                 this.multiReader = this.kinect.OpenMultiSourceFrameReader(FrameSourceTypes.Color | FrameSourceTypes.Depth);
                 this.multiReader.MultiSourceFrameArrived += multiReader_MultiSourceFrameArrived;
                 kinect.Open();
-
-                //カラー画像深度画像の平滑化
-                //深度画像を法線情報に変換
-                //法線情報とカラー情報をまとめる
-                //Kmeans法でカラー情報の分離
-                //最小二乗法で法線方向の照度を求める
             }
             catch
             {
@@ -106,6 +108,8 @@ namespace kinect_test
             //Depthのサイズで作成
             var colorImageBuffer = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             var depthImageBuffer = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            //Depth情報保存用(y,x)
+            UInt16[,] depthBuffer = new UInt16[424, 512];
             //Depth座標系に対応するカラー座標系の取得
             var colorSpace = new ColorSpacePoint[depthFrameDescription.LengthInPixels];
             mapper.MapDepthFrameToColorSpace(depthFrameData, colorSpace);
@@ -134,7 +138,7 @@ namespace kinect_test
                 depthImageBuffer[colorImageIndex++] = intensity;
                 depthImageBuffer[colorImageIndex++] = intensity;
             }
-            BitmapSource test = BitmapSource.Create(this.depthFrameDescription.Width,
+            BitmapSource collor = BitmapSource.Create(this.depthFrameDescription.Width,
                 this.depthFrameDescription.Height,
                 96, 96, PixelFormats.Bgr32, null, colorImageBuffer, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
 
@@ -142,26 +146,36 @@ namespace kinect_test
                 this.depthFrameDescription.Height,
                 96, 96, PixelFormats.Bgr32, null, depthImageBuffer, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
 
-            Images.Source = test;
+            Images.Source = collor;
             Images2.Source = depth;
 
             if (click == true)
             {
+                //カラー情報とデプス情報を別で保存して、メモリ解放する
                 click = false;
                 calibrationData = mapper.GetDepthCameraIntrinsics();
                 MessageBox.Show("test");
-                // BitmapSourceを保存する
-                /*
-                using (Stream stream = new FileStream("test.png", FileMode.Create))
+                /*-------------Depthだけを保存せず、いきなり頂点を求める----------------------
+                //Depth情報を保存
+                for (int i = 0; i < this.depthFrameData.Length; ++i)
                 {
-                    PngBitmapEncoder encoder = new PngBitmapEncoder();
-                    encoder.Frames.Add(BitmapFrame.Create(depth));
-                    encoder.Save(stream);
-                }*/
-                Mat src = BitmapSourceConverter.ToMat(depth);
+                    int x = i % 512;
+                    int y = i / 512;
+                    depthBuffer[y, x] = depthFrameData[i];
+                }
+                ------------------------------------------------------------------------------*/
+                    // BitmapSourceを保存する
+                    /*
+                    using (Stream stream = new FileStream("test.png", FileMode.Create))
+                    {
+                        PngBitmapEncoder encoder = new PngBitmapEncoder();
+                        encoder.Frames.Add(BitmapFrame.Create(depth));
+                        encoder.Save(stream);
+                    }*/
+                    Mat src = BitmapSourceConverter.ToMat(depth);
                 
                 //頂点マップの作成
-                var depthData = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+                var depthData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
                 for (int i = 0; i < this.depthFrameData.Length; ++i)
                 {
                     int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
@@ -178,9 +192,9 @@ namespace kinect_test
                     var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
 
                     //頂点座標
-                    depthData[colorImageIndex++] = (byte)((u - calibrationData.PrincipalPointX) / calibrationData.FocalLengthX * depthFrameData[i]);//x
-                    depthData[colorImageIndex++] = (byte)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * depthFrameData[i]);//y
-                    depthData[colorImageIndex++] = (byte)depthFrameData[i];//z
+                    depthData[colorImageIndex++] = (int)((u - calibrationData.PrincipalPointX) / calibrationData.FocalLengthX * depthFrameData[i]);//x
+                    depthData[colorImageIndex++] = (int)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * depthFrameData[i]);//y
+                    depthData[colorImageIndex++] = (int)depthFrameData[i];//z
                 }
 
                 //法線マップの作成

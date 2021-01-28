@@ -173,8 +173,10 @@ namespace kinect_test
                         encoder.Save(stream);
                     }*/
                     Mat src = BitmapSourceConverter.ToMat(depth);
-                
+
                 //頂点マップの作成
+                VertexmapCreate(depthFrameData);
+                /*
                 var depthData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
                 for (int i = 0; i < this.depthFrameData.Length; ++i)
                 {
@@ -196,8 +198,10 @@ namespace kinect_test
                     depthData[colorImageIndex++] = (int)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * depthFrameData[i]);//y
                     depthData[colorImageIndex++] = (int)depthFrameData[i];//z
                 }
+                */
 
                 //法線マップの作成
+                /*
                 var normalData = new float[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
                 for (int i = 0; i < this.depthFrameData.Length; ++i)
                 {
@@ -206,12 +210,58 @@ namespace kinect_test
                     normalData[normalImageIndex + 0] = depthData[normalImageIndex + 3] - depthData[normalImageIndex - 3];
                     normalData[normalImageIndex + 1] = depthData[normalImageIndex + depthFrameDescription.Width * 3] - depthData[normalImageIndex - depthFrameDescription.Width * 3];
                     normalData[normalImageIndex + 2] = 
-                }
+                }*/
 
 
                 }
             colorFrame.Dispose();
             depthFrame.Dispose();
+        }
+
+        //深度情報から頂点マップを作成する関数
+        private void VertexmapCreate(ushort[] DepthData) {
+            //頂点データ
+            var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            for (int i = 0; i < this.depthFrameData.Length; ++i)
+            {
+                int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
+                //テクスチャ座標
+                var im_x = i % depthFrameDescription.Width;
+                var im_y = i / depthFrameDescription.Width;
+
+                //uv座標
+                var u = im_x - depthFrameDescription.Width * 0.5;
+                var v = depthFrameDescription.Height * 0.5 - im_y;
+
+                //正規化用の座標最大値・最小値
+                var range_x = depthFrameDescription.Width / calibrationData.FocalLengthX * 4500;
+                var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
+
+                //頂点座標
+                vertexData[colorImageIndex++] = (int)((u - calibrationData.PrincipalPointX) / calibrationData.FocalLengthX * depthFrameData[i]);//x
+                vertexData[colorImageIndex++] = (int)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * depthFrameData[i]);//y
+                vertexData[colorImageIndex++] = (int)depthFrameData[i];//z
+            }
+            var vertexImage = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            //頂点マップを画像用にRGBの範囲で正規化する。
+            for (int i = 0; i < this.depthFrameData.Length; ++i)
+            {
+                int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
+                //正規化用の座標最大値・最小値
+                var range_x = depthFrameDescription.Width / calibrationData.FocalLengthX * 4500;
+                var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
+
+                //頂点座標
+                vertexImage[colorImageIndex]     = (byte)(vertexData[colorImageIndex] / range_x * 255);//x
+                vertexImage[colorImageIndex + 1] = (byte)(vertexData[colorImageIndex + 1] / range_y * 255);//y
+                vertexImage[colorImageIndex + 2] = (byte)(255 * (vertexData[colorImageIndex + 2] - 500) / 7500);//z範囲外になる
+            }
+            //頂点マップの表示
+            BitmapSource vertexMap = BitmapSource.Create(this.depthFrameDescription.Width,
+                this.depthFrameDescription.Height,
+                96, 96, PixelFormats.Bgr32, null, vertexImage, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+            Mat src = BitmapSourceConverter.ToMat(vertexMap);
+            Cv2.ImShow("Test", src);
         }
 
         //画像の平滑化

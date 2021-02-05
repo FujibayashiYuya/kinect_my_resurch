@@ -175,7 +175,9 @@ namespace kinect_test
                 Mat src = BitmapSourceConverter.ToMat(depth);
 
                 //頂点マップの作成
-                VertexmapCreate(depthFrameData);
+                var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+                vertexData = VertexmapCreate(depthFrameData);
+                NormalmapCreate(vertexData);
                 /*
                 var depthData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
                 for (int i = 0; i < this.depthFrameData.Length; ++i)
@@ -216,7 +218,7 @@ namespace kinect_test
         }
 
         //深度情報から頂点マップを作成する関数
-        private void VertexmapCreate(ushort[] DepthData)
+        private int[] VertexmapCreate(ushort[] DepthData)
         {
             //頂点データ
             var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
@@ -240,7 +242,7 @@ namespace kinect_test
                 vertexData[colorImageIndex++] = (int)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * depthFrameData[i]);//y
                 vertexData[colorImageIndex++] = (int)depthFrameData[i];//z
             }
-            
+
             //頂点マップを画像用にRGBの範囲で正規化する。
             var vertexImage = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             for (int i = 0; i < this.depthFrameData.Length; ++i)
@@ -253,7 +255,7 @@ namespace kinect_test
                 //頂点座標
                 vertexImage[colorImageIndex] = (byte)(vertexData[colorImageIndex] / range_x * 255);//x
                 vertexImage[colorImageIndex + 1] = (byte)(vertexData[colorImageIndex + 1] / range_y * 255);//y
-                vertexImage[colorImageIndex + 2] = (byte)(255 * (vertexData[colorImageIndex + 2] - 500) / 7500);//z範囲外になる
+                vertexImage[colorImageIndex + 2] = (byte)(255 * (vertexData[colorImageIndex + 2] - 500) / 7500);//z
             }
             //頂点マップの表示
             BitmapSource vertexMap = BitmapSource.Create(this.depthFrameDescription.Width,
@@ -261,6 +263,8 @@ namespace kinect_test
                 96, 96, PixelFormats.Bgr32, null, vertexImage, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
             Mat src = BitmapSourceConverter.ToMat(vertexMap);
             Cv2.ImShow("Test", src);
+
+            return vertexData;
         }
 
         //頂点マップから法線マップを作成する関数
@@ -270,8 +274,48 @@ namespace kinect_test
             //vx=V(x+1,y)−V(x−1,y) 
             //vy = V(x, y + 1)−V(x, y−1)
             //n(u) = norm(vx×vy)
-        }
+            var vx = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            var vy = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            
+            for (int i = 0; i < this.depthFrameData.Length; ++i)
+            {
+                int vecIndex = (int)(i * colorFrameDescription.BytesPerPixel);
+                int x_vec = (int)(colorFrameDescription.BytesPerPixel);
+                int y_vec = (int)(depthFrameDescription.Width * colorFrameDescription.BytesPerPixel);
 
+                //とりあえず四隅の値は無しでやる
+                int uv_x = i % depthFrameDescription.Width;
+                int uv_y = i / depthFrameDescription.Width;
+                if(uv_x + 1 > depthFrameDescription.Width || uv_x-1 < 0 || 
+                    uv_y + 1 > depthFrameDescription.Height || uv_y-1 < 0)
+                {
+                    //vxについて
+                    vx[vecIndex] = 0;
+                    vx[vecIndex+1] = 0;
+                    vx[vecIndex+2] = 0;
+
+                    //vyについて
+                    vy[vecIndex] = 0;
+                    vy[vecIndex + 1] = 0;
+                    vy[vecIndex + 2] = 0;
+                }
+                else
+                {
+                    //vxについて
+                    vx[vecIndex] = VertexData[vecIndex + x_vec] - VertexData[vecIndex - x_vec];
+                    vx[++vecIndex] = VertexData[vecIndex + x_vec] - VertexData[vecIndex - x_vec];
+                    vx[++vecIndex] = VertexData[vecIndex + x_vec] - VertexData[vecIndex - x_vec];
+
+                    //vyについて
+                    vy[vecIndex] = VertexData[vecIndex + y_vec] - VertexData[vecIndex - y_vec];
+                    vy[++vecIndex] = VertexData[vecIndex + y_vec] - VertexData[vecIndex - y_vec];
+                    vy[++vecIndex] = VertexData[vecIndex + y_vec] - VertexData[vecIndex - y_vec];
+                }
+
+                //外積の方向に注意・法線ベクトルが真逆向かないように(vxからvyにねじを回して進む方向が法線方向になる)
+                
+            }
+        }
 
         //画像の平滑化
         private void ImageProgress()

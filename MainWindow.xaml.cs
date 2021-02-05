@@ -164,15 +164,15 @@ namespace kinect_test
                     depthBuffer[y, x] = depthFrameData[i];
                 }
                 ------------------------------------------------------------------------------*/
-                    // BitmapSourceを保存する
-                    /*
-                    using (Stream stream = new FileStream("test.png", FileMode.Create))
-                    {
-                        PngBitmapEncoder encoder = new PngBitmapEncoder();
-                        encoder.Frames.Add(BitmapFrame.Create(depth));
-                        encoder.Save(stream);
-                    }*/
-                    Mat src = BitmapSourceConverter.ToMat(depth);
+                // BitmapSourceを保存する
+                /*
+                using (Stream stream = new FileStream("test.png", FileMode.Create))
+                {
+                    PngBitmapEncoder encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(depth));
+                    encoder.Save(stream);
+                }*/
+                Mat src = BitmapSourceConverter.ToMat(depth);
 
                 //頂点マップの作成
                 VertexmapCreate(depthFrameData);
@@ -184,15 +184,12 @@ namespace kinect_test
                     //テクスチャ座標
                     var im_x = i % depthFrameDescription.Width;
                     var im_y = i / depthFrameDescription.Width;
-
                     //uv座標
                     var u = im_x - depthFrameDescription.Width * 0.5;
                     var v = depthFrameDescription.Height * 0.5 - im_y;
-
                     //正規化用の座標最大値・最小値
                     var range_x = depthFrameDescription.Width / calibrationData.FocalLengthX * 4500;
                     var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
-
                     //頂点座標
                     depthData[colorImageIndex++] = (int)((u - calibrationData.PrincipalPointX) / calibrationData.FocalLengthX * depthFrameData[i]);//x
                     depthData[colorImageIndex++] = (int)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * depthFrameData[i]);//y
@@ -213,13 +210,14 @@ namespace kinect_test
                 }*/
 
 
-                }
+            }
             colorFrame.Dispose();
             depthFrame.Dispose();
         }
 
         //深度情報から頂点マップを作成する関数
-        private void VertexmapCreate(ushort[] DepthData) {
+        private void VertexmapCreate(ushort[] DepthData)
+        {
             //頂点データ
             var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             for (int i = 0; i < this.depthFrameData.Length; ++i)
@@ -242,8 +240,9 @@ namespace kinect_test
                 vertexData[colorImageIndex++] = (int)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * depthFrameData[i]);//y
                 vertexData[colorImageIndex++] = (int)depthFrameData[i];//z
             }
-            var vertexImage = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            
             //頂点マップを画像用にRGBの範囲で正規化する。
+            var vertexImage = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             for (int i = 0; i < this.depthFrameData.Length; ++i)
             {
                 int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
@@ -252,7 +251,7 @@ namespace kinect_test
                 var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
 
                 //頂点座標
-                vertexImage[colorImageIndex]     = (byte)(vertexData[colorImageIndex] / range_x * 255);//x
+                vertexImage[colorImageIndex] = (byte)(vertexData[colorImageIndex] / range_x * 255);//x
                 vertexImage[colorImageIndex + 1] = (byte)(vertexData[colorImageIndex + 1] / range_y * 255);//y
                 vertexImage[colorImageIndex + 2] = (byte)(255 * (vertexData[colorImageIndex + 2] - 500) / 7500);//z範囲外になる
             }
@@ -263,6 +262,16 @@ namespace kinect_test
             Mat src = BitmapSourceConverter.ToMat(vertexMap);
             Cv2.ImShow("Test", src);
         }
+
+        //頂点マップから法線マップを作成する関数
+        private void NormalmapCreate(int[] VertexData)
+        {
+            var normalData = new double[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            //vx=V(x+1,y)−V(x−1,y) 
+            //vy = V(x, y + 1)−V(x, y−1)
+            //n(u) = norm(vx×vy)
+        }
+
 
         //画像の平滑化
         private void ImageProgress()

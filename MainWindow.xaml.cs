@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Numerics;
+using System.Runtime;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -176,7 +177,7 @@ namespace kinect_test
 
                 //頂点マップの作成
                 var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-                var normalData = new double[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+                var normalData = new Vector3[depthFrameDescription.LengthInPixels];
                 vertexData = VertexmapCreate(depthFrameData);
                 normalData = NormalmapCreate(vertexData);
                 /*
@@ -322,6 +323,7 @@ namespace kinect_test
                 normalData[vecIndex + 0] = vx[vecIndex + 1] * vy[vecIndex + 2] - vx[vecIndex + 2] * vy[vecIndex + 1];
                 normalData[vecIndex + 1] = vx[vecIndex + 2] * vy[vecIndex + 0] - vx[vecIndex + 0] * vy[vecIndex + 2];
                 normalData[vecIndex + 2] = vx[vecIndex + 0] * vy[vecIndex + 1] - vx[vecIndex + 1] * vy[vecIndex + 0];
+                norvecData[j] = Normalize(normalData[vecIndex + 0], normalData[vecIndex + 1], normalData[vecIndex + 2]);
             }
             MessageBox.Show("test");
             return norvecData;
@@ -334,7 +336,12 @@ namespace kinect_test
         }
 
         //正規化関数（型がdoule型なので）
-        void 
+        private Vector3 Normalize(int x, int y, int z)
+        {
+            double leng = Math.Sqrt(x * x + y * y + z * z);
+            Vector3 normvec = new Vector3((float)(x / leng), (float)(y / leng), (float)(z / leng));
+            return normvec;
+        }
 
         void OnClick(object sender, RoutedEventArgs e)
         {

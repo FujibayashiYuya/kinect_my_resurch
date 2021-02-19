@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Numerics;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -154,7 +155,6 @@ namespace kinect_test
                 //カラー情報とデプス情報を別で保存して、メモリ解放する
                 click = false;
                 calibrationData = mapper.GetDepthCameraIntrinsics();
-                MessageBox.Show("test");
                 /*-------------Depthだけを保存せず、いきなり頂点を求める----------------------
                 //Depth情報を保存
                 for (int i = 0; i < this.depthFrameData.Length; ++i)
@@ -176,8 +176,9 @@ namespace kinect_test
 
                 //頂点マップの作成
                 var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+                var normalData = new double[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
                 vertexData = VertexmapCreate(depthFrameData);
-                NormalmapCreate(vertexData);
+                normalData = NormalmapCreate(vertexData);
                 /*
                 var depthData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
                 for (int i = 0; i < this.depthFrameData.Length; ++i)
@@ -268,15 +269,16 @@ namespace kinect_test
         }
 
         //頂点マップから法線マップを作成する関数
-        private void NormalmapCreate(int[] VertexData)
+        private Vector3[] NormalmapCreate(int[] VertexData)
         {
-            var normalData = new double[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            var normalData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            var norvecData = new Vector3[depthFrameDescription.LengthInPixels];
             //vx=V(x+1,y)−V(x−1,y) 
             //vy = V(x, y + 1)−V(x, y−1)
             //n(u) = norm(vx×vy)
             var vx = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             var vy = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-            
+
             for (int i = 0; i < this.depthFrameData.Length; ++i)
             {
                 int vecIndex = (int)(i * colorFrameDescription.BytesPerPixel);
@@ -284,15 +286,14 @@ namespace kinect_test
                 int y_vec = (int)(depthFrameDescription.Width * colorFrameDescription.BytesPerPixel);
 
                 //とりあえず四隅の値は無しでやる
-                int uv_x = i % depthFrameDescription.Width;
-                int uv_y = i / depthFrameDescription.Width;
-                if(uv_x + 1 > depthFrameDescription.Width || uv_x-1 < 0 || 
-                    uv_y + 1 > depthFrameDescription.Height || uv_y-1 < 0)
+                if (vecIndex + x_vec > VertexData.Length || vecIndex - x_vec < 0 ||
+                    (vecIndex + x_vec) / y_vec != (vecIndex - x_vec) / y_vec ||
+                    (vecIndex + y_vec) > VertexData.Length || (vecIndex - y_vec) < 0)
                 {
                     //vxについて
                     vx[vecIndex] = 0;
-                    vx[vecIndex+1] = 0;
-                    vx[vecIndex+2] = 0;
+                    vx[vecIndex + 1] = 0;
+                    vx[vecIndex + 2] = 0;
 
                     //vyについて
                     vy[vecIndex] = 0;
@@ -311,10 +312,19 @@ namespace kinect_test
                     vy[++vecIndex] = VertexData[vecIndex + y_vec] - VertexData[vecIndex - y_vec];
                     vy[++vecIndex] = VertexData[vecIndex + y_vec] - VertexData[vecIndex - y_vec];
                 }
-
-                //外積の方向に注意・法線ベクトルが真逆向かないように(vxからvyにねじを回して進む方向が法線方向になる)
-                
             }
+            //外積の方向に注意・法線ベクトルが真逆向かないように(vxからvyにねじを回して進む方向が法線方向になる)
+            //Normalizedを使うにはfloat型
+            //法線方向を求める
+            for (int j = 0; j < this.depthFrameData.Length; ++j)
+            {
+                int vecIndex = (int)(j * colorFrameDescription.BytesPerPixel);
+                normalData[vecIndex + 0] = vx[vecIndex + 1] * vy[vecIndex + 2] - vx[vecIndex + 2] * vy[vecIndex + 1];
+                normalData[vecIndex + 1] = vx[vecIndex + 2] * vy[vecIndex + 0] - vx[vecIndex + 0] * vy[vecIndex + 2];
+                normalData[vecIndex + 2] = vx[vecIndex + 0] * vy[vecIndex + 1] - vx[vecIndex + 1] * vy[vecIndex + 0];
+            }
+            MessageBox.Show("test");
+            return norvecData;
         }
 
         //画像の平滑化
@@ -322,6 +332,9 @@ namespace kinect_test
         {
             Mat img;
         }
+
+        //正規化関数（型がdoule型なので）
+        void 
 
         void OnClick(object sender, RoutedEventArgs e)
         {

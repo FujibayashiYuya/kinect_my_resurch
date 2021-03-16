@@ -156,50 +156,29 @@ namespace kinect_test
                 //カラー情報とデプス情報を別で保存して、メモリ解放する
                 click = false;
                 calibrationData = mapper.GetDepthCameraIntrinsics();
-                /*-------------Depthだけを保存せず、いきなり頂点を求める----------------------
-                //Depth情報を保存
+
+                //(1)Depthの補間
                 for (int i = 0; i < this.depthFrameData.Length; ++i)
                 {
-                    int x = i % 512;
-                    int y = i / 512;
-                    depthBuffer[y, x] = depthFrameData[i];
+                    if (depthFrameData[i] == 0) {
+                        depthFrameData[i] = depthFrameData[i+1] + depthFrameData[]
+                    }
                 }
-                ------------------------------------------------------------------------------*/
-                // BitmapSourceを保存する
-                /*
-                using (Stream stream = new FileStream("test.png", FileMode.Create))
-                {
-                    PngBitmapEncoder encoder = new PngBitmapEncoder();
-                    encoder.Frames.Add(BitmapFrame.Create(depth));
-                    encoder.Save(stream);
-                }*/
-                Mat src = BitmapSourceConverter.ToMat(depth);
+                    // BitmapSourceを保存する
+                    /*
+                    using (Stream stream = new FileStream("test.png", FileMode.Create))
+                    {
+                        PngBitmapEncoder encoder = new PngBitmapEncoder();
+                        encoder.Frames.Add(BitmapFrame.Create(depth));
+                        encoder.Save(stream);
+                    }*/
+                    Mat src = BitmapSourceConverter.ToMat(depth);
 
                 //頂点マップの作成
                 var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
                 var normalData = new Vector3[depthFrameDescription.LengthInPixels];
                 vertexData = VertexmapCreate(depthFrameData);
                 normalData = NormalmapCreate(vertexData);
-                /*
-                var depthData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-                for (int i = 0; i < this.depthFrameData.Length; ++i)
-                {
-                    int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
-                    //テクスチャ座標
-                    var im_x = i % depthFrameDescription.Width;
-                    var im_y = i / depthFrameDescription.Width;
-                    //uv座標
-                    var u = im_x - depthFrameDescription.Width * 0.5;
-                    var v = depthFrameDescription.Height * 0.5 - im_y;
-                    //正規化用の座標最大値・最小値
-                    var range_x = depthFrameDescription.Width / calibrationData.FocalLengthX * 4500;
-                    var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
-                    //頂点座標
-                    depthData[colorImageIndex++] = (int)((u - calibrationData.PrincipalPointX) / calibrationData.FocalLengthX * depthFrameData[i]);//x
-                    depthData[colorImageIndex++] = (int)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * depthFrameData[i]);//y
-                    depthData[colorImageIndex++] = (int)depthFrameData[i];//z
-                }
-                */
 
                 //法線マップの作成
                 /*
@@ -219,12 +198,21 @@ namespace kinect_test
             depthFrame.Dispose();
         }
 
-        //深度情報から頂点マップを作成する関数
+        private void DepthInterpolation(ushort[] depthFrameData)
+        {
+            for(int i = 0; i < depthFrameData.Length; i++)
+            {
+
+            }
+        }
+
+
+        /*==========================深度情報から頂点マップを作成する関数=======================================*/
         private int[] VertexmapCreate(ushort[] DepthData)
         {
             //頂点データ
             var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-            for (int i = 0; i < this.depthFrameData.Length; ++i)
+            for (int i = 0; i < DepthData.Length; ++i)
             {
                 int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
                 //テクスチャ座標
@@ -240,14 +228,14 @@ namespace kinect_test
                 var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
 
                 //頂点座標
-                vertexData[colorImageIndex++] = (int)((u - calibrationData.PrincipalPointX) / calibrationData.FocalLengthX * depthFrameData[i]);//x
-                vertexData[colorImageIndex++] = (int)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * depthFrameData[i]);//y
-                vertexData[colorImageIndex++] = (int)depthFrameData[i];//z
+                vertexData[colorImageIndex++] = (int)((u - calibrationData.PrincipalPointX) / calibrationData.FocalLengthX * DepthData[i]);//x
+                vertexData[colorImageIndex++] = (int)((v - calibrationData.PrincipalPointY) / calibrationData.FocalLengthY * DepthData[i]);//y
+                vertexData[colorImageIndex++] = (int)DepthData[i];//z
             }
 
             //頂点マップを画像用にRGBの範囲で正規化する。
             var vertexImage = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-            for (int i = 0; i < this.depthFrameData.Length; ++i)
+            for (int i = 0; i < DepthData.Length; ++i)
             {
                 int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
                 //正規化用の座標最大値・最小値
@@ -269,7 +257,7 @@ namespace kinect_test
             return vertexData;
         }
 
-        //頂点マップから法線マップを作成する関数
+        /*==========================頂点マップから法線マップを作成する関数=======================================*/
         private Vector3[] NormalmapCreate(int[] VertexData)
         {
             var normalData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
@@ -279,7 +267,7 @@ namespace kinect_test
             //n(u) = norm(vx×vy)
             var vx = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             var vy = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-
+            Debug.WriteLine(Normalized(10,5,15));
             for (int i = 0; i < this.depthFrameData.Length; ++i)
             {
                 int vecIndex = (int)(i * colorFrameDescription.BytesPerPixel);
@@ -315,7 +303,6 @@ namespace kinect_test
                 }
             }
             //外積の方向に注意・法線ベクトルが真逆向かないように(vxからvyにねじを回して進む方向が法線方向になる)
-            //Normalizedを使うにはfloat型
             //法線方向を求める
             for (int j = 0; j < this.depthFrameData.Length; ++j)
             {
@@ -323,23 +310,36 @@ namespace kinect_test
                 normalData[vecIndex + 0] = vx[vecIndex + 1] * vy[vecIndex + 2] - vx[vecIndex + 2] * vy[vecIndex + 1];
                 normalData[vecIndex + 1] = vx[vecIndex + 2] * vy[vecIndex + 0] - vx[vecIndex + 0] * vy[vecIndex + 2];
                 normalData[vecIndex + 2] = vx[vecIndex + 0] * vy[vecIndex + 1] - vx[vecIndex + 1] * vy[vecIndex + 0];
-                norvecData[j] = Normalize(normalData[vecIndex + 0], normalData[vecIndex + 1], normalData[vecIndex + 2]);
+                norvecData[j] = Normalized(normalData[vecIndex + 0], normalData[vecIndex + 1], normalData[vecIndex + 2]);
+                //if (norvecData[j].X > 2)MessageBox.Show("2こえ");//おかしい2すら超えてる
             }
-            MessageBox.Show("test");
+
+            //画像出力用
+            var normalmap = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            for (int j = 0; j < this.depthFrameData.Length; ++j)
+            {
+                int vecIndex = (int)(j * colorFrameDescription.BytesPerPixel);
+                normalmap[vecIndex + 0] = (int)((norvecData[j].X + 1) * 127.5);
+                normalmap[vecIndex + 1] = (int)((norvecData[j].Y + 1) * 127.5);
+                normalmap[vecIndex + 2] = (int)(norvecData[j].Z * 255);
+            }
+            //MessageBox.Show("test");
+            BitmapSource normalMap = BitmapSource.Create(this.depthFrameDescription.Width,
+                this.depthFrameDescription.Height,
+                96, 96, PixelFormats.Bgr32, null, normalmap, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+            Mat src = BitmapSourceConverter.ToMat(normalMap);
+            Cv2.ImShow("normal", src);
             return norvecData;
         }
 
-        //画像の平滑化
-        private void ImageProgress()
+        /*=========================================正規化関数（型がdoule型なので）======================================*/
+        /*小さい値でやった場合計算はOK*/
+        private Vector3 Normalized(int x, int y, int z)
         {
-            Mat img;
-        }
-
-        //正規化関数（型がdoule型なので）
-        private Vector3 Normalize(int x, int y, int z)
-        {
-            double leng = Math.Sqrt(x * x + y * y + z * z);
-            Vector3 normvec = new Vector3((float)(x / leng), (float)(y / leng), (float)(z / leng));
+            double dis = x * x + y * y + z * z;
+            double leng = Math.Sqrt(dis);//doubleの範囲を超えてる可能性
+            Vector3 normvec = new Vector3((float)((double)x / leng), (float)((double)y / leng), (float)((double)z / leng));
+            //Debug.WriteLine(normvec);
             return normvec;
         }
 
@@ -377,3 +377,4 @@ namespace kinect_test
         }
     }
 }
+

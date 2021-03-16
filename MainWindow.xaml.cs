@@ -178,10 +178,10 @@ namespace kinect_test
 
                 //頂点マップの作成
                 var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-                //var normalData = new Vector3[depthFrameDescription.LengthInPixels];
-                double[,] normalData = new double[depthFrameDescription.LengthInPixels, 3];
+                var normalData = new Vector3[depthFrameDescription.LengthInPixels];
+                //double[,] normalData = new double[depthFrameDescription.LengthInPixels, 3];
                 vertexData = VertexmapCreate(depthFrameData);
-                normalData = Test(vertexData);
+                normalData = NormalmapCreate(vertexData);
 
                 //法線マップの作成
                 /*
@@ -318,13 +318,13 @@ namespace kinect_test
             }
 
             //画像出力用
-            var normalmap = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            var normalmap = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             for (int j = 0; j < this.depthFrameData.Length; ++j)
             {
                 int vecIndex = (int)(j * colorFrameDescription.BytesPerPixel);
-                normalmap[vecIndex + 0] = (int)((norvecData[j].X + 1) * 127.5);
-                normalmap[vecIndex + 1] = (int)((norvecData[j].Y + 1) * 127.5);
-                normalmap[vecIndex + 2] = (int)(norvecData[j].Z * 255);
+                normalmap[vecIndex + 0] = (byte)((norvecData[j].X + 1) * 127.5);
+                normalmap[vecIndex + 1] = (byte)((norvecData[j].Y + 1) * 127.5);
+                normalmap[vecIndex + 2] = (byte)(norvecData[j].Z * 255);
             }
             //MessageBox.Show("test");
             BitmapSource normalMap = BitmapSource.Create(this.depthFrameDescription.Width,
@@ -335,7 +335,7 @@ namespace kinect_test
             return norvecData;
         }
 
-        /*=========================================正規化関数（型がdoule型なので）======================================*/
+        /*=========================================テスト====================================================================*/
         private double[,] Test(int[] VertexData)
         {
             //x方向:vx , y方向:vy , 法線方向:normalData
@@ -376,7 +376,7 @@ namespace kinect_test
                 //頂点座標
                 normalImage[normalImageIndex] = (byte)((normalData[i, 0] + 1.0) * 0.5 * 255);//x
                 normalImage[normalImageIndex + 1] = (byte)((normalData[i, 1] + 1.0) * 0.5 * 255);//y
-                normalImage[normalImageIndex + 2] = (byte)((normalData[i, 2] + 1.0) * 0.5 * 255);//z
+                normalImage[normalImageIndex + 2] = (byte)(normalData[i, 2] * 255);//z
             }
             //頂点マップの表示
             BitmapSource vertexMap = BitmapSource.Create(this.depthFrameDescription.Width,
@@ -385,10 +385,6 @@ namespace kinect_test
             Mat src = BitmapSourceConverter.ToMat(vertexMap);
             Cv2.ImShow("normal", src);
 
-            //テスト
-            double[] v = {0, 1, 2};
-            double[] u = {-1, 0, 3};
-            Debug.WriteLine(string.Join(", ", VecCross(v,u)));
             return normalData;
         }
 
@@ -413,7 +409,7 @@ namespace kinect_test
             n[2] = vx[0] * vy[1] - vx[1] * vy[0];
             return n;
         }
-
+        /*=========================================↑テスト=================================================================*/
 
         /*小さい値でやった場合計算はOK*/
         private Vector3 Normalized(int x, int y, int z)

@@ -161,13 +161,14 @@ namespace kinect_test
                 //Depthが取得できず、周りの情報も不足している場所の保存
                 uint[] integralimg = new uint[depthFrameDescription.Width * depthFrameDescription.Height];
                 integralimg = IntegralImage(depthFrameData);
+                /*
                 for (int i = 0; i < this.depthFrameData.Length; ++i)
                 {
                     if (depthFrameData[i] == 0 && i+ depthFrameDescription.Width< depthFrameData.Length && i- depthFrameDescription.Width > 0)
                     {
                         depthFrameData[i] = (ushort)((depthFrameData[i+1] + depthFrameData[i-1] + depthFrameData[i+depthFrameDescription.Width] + depthFrameData[i-depthFrameDescription.Width])/4);
                     }
-                }
+                }*/
                 // BitmapSourceを保存する
                 /*
                 using (Stream stream = new FileStream("test.png", FileMode.Create))
@@ -445,6 +446,28 @@ namespace kinect_test
             ushort s = (ushort)(inteim[(n+r)* depthFrameDescription.Width + m + r] - inteim[(n + r) * depthFrameDescription.Width - m - r]
                  + inteim[(n - r) * depthFrameDescription.Width + m - r] - inteim[(n - r) * depthFrameDescription.Width - m - r]);
             return s;
+        }
+
+        //バイラテラルフィルタ
+        private ushort[] BilateralFilter(ushort[] depth)
+        {
+            int uw = 0;
+            int uh = 0;
+            ushort[] smoothingdepth = new ushort[depth.Length];
+            for(int i = 0; i < depthFrameData.Length; i++)
+            {
+                uw = i % depthFrameDescription.Width;
+                uh = i / depthFrameDescription.Width;
+                //5*5のフィルタ
+                for (int j = -2; j < 3; j++)
+                {
+                    for(int k = -2; k < 3; k++)
+                    {
+
+                    }
+                }
+            }
+            return smoothingdepth;
         }
 
 

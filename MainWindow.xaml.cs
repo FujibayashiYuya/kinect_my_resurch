@@ -157,16 +157,16 @@ namespace kinect_test
                 click = false;
                 calibrationData = mapper.GetDepthCameraIntrinsics();
 
-                //(1)Depthの補間
+                //(0)Depthの積分画像を作成
+
+                //(1)Depthの平滑化
                 //Depthが取得できず、周りの情報も不足している場所の保存
-                uint[] integralimg = new uint[depthFrameDescription.Width * depthFrameDescription.Height];
-                integralimg = IntegralImage(depthFrameData);
                 /*
                 for (int i = 0; i < this.depthFrameData.Length; ++i)
                 {
-                    if (depthFrameData[i] == 0 && i+ depthFrameDescription.Width< depthFrameData.Length && i- depthFrameDescription.Width > 0)
+                    if (depthFrameData[i] == 0 && i + depthFrameDescription.Width < depthFrameData.Length && i - depthFrameDescription.Width > 0)
                     {
-                        depthFrameData[i] = (ushort)((depthFrameData[i+1] + depthFrameData[i-1] + depthFrameData[i+depthFrameDescription.Width] + depthFrameData[i-depthFrameDescription.Width])/4);
+                        depthFrameData[i] = (ushort)((depthFrameData[i + 1] + depthFrameData[i - 1] + depthFrameData[i + depthFrameDescription.Width] + depthFrameData[i - depthFrameDescription.Width]) / 4);
                     }
                 }*/
                 // BitmapSourceを保存する
@@ -183,22 +183,9 @@ namespace kinect_test
                 var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
                 //var normalData = new Vector3[depthFrameDescription.LengthInPixels];
                 double[,] normalData = new double[depthFrameDescription.LengthInPixels, 3];
+                depthFrameData = BilateralFilter(depthFrameData);
                 vertexData = VertexmapCreate(depthFrameData);
-                normalData = Test(vertexData);
-
-                //法線マップの作成
-                /*
-                var normalData = new float[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-                for (int i = 0; i < this.depthFrameData.Length; ++i)
-                {
-                    int normalImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
-                    //外積はベクトルで計算したほうが楽（書き直し）
-                    normalData[normalImageIndex + 0] = depthData[normalImageIndex + 3] - depthData[normalImageIndex - 3];
-                    normalData[normalImageIndex + 1] = depthData[normalImageIndex + depthFrameDescription.Width * 3] - depthData[normalImageIndex - depthFrameDescription.Width * 3];
-                    normalData[normalImageIndex + 2] = 
-                }*/
-
-
+                normalData = NormalmapCreate(vertexData);
             }
             colorFrame.Dispose();
             depthFrame.Dispose();
@@ -263,8 +250,8 @@ namespace kinect_test
             return vertexData;
         }
 
-        /*==========================頂点マップから法線マップを作成する関数=======================================*/
-        private Vector3[] NormalmapCreate(int[] VertexData)
+        /*==========================頂点マップから法線マップを作成する関数(もう使わない)=======================================*/
+        private Vector3[] NmC(int[] VertexData)
         {
             var normalData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             var norvecData = new Vector3[depthFrameDescription.LengthInPixels];
@@ -273,7 +260,7 @@ namespace kinect_test
             //n(u) = norm(vx×vy)
             var vx = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             var vy = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-            Debug.WriteLine(Normalized(10, 5, 15));
+            
             for (int i = 0; i < this.depthFrameData.Length; ++i)
             {
                 int vecIndex = (int)(i * colorFrameDescription.BytesPerPixel);
@@ -316,7 +303,7 @@ namespace kinect_test
                 normalData[vecIndex + 0] = vx[vecIndex + 1] * vy[vecIndex + 2] - vx[vecIndex + 2] * vy[vecIndex + 1];
                 normalData[vecIndex + 1] = vx[vecIndex + 2] * vy[vecIndex + 0] - vx[vecIndex + 0] * vy[vecIndex + 2];
                 normalData[vecIndex + 2] = vx[vecIndex + 0] * vy[vecIndex + 1] - vx[vecIndex + 1] * vy[vecIndex + 0];
-                norvecData[j] = Normalized(normalData[vecIndex + 0], normalData[vecIndex + 1], normalData[vecIndex + 2]);
+                //norvecData[j] = VecNormalized(normalData[vecIndex + 0], normalData[vecIndex + 1], normalData[vecIndex + 2]);
                 //if (norvecData[j].X > 2)MessageBox.Show("2こえ");//おかしい2すら超えてる
             }
 
@@ -338,49 +325,49 @@ namespace kinect_test
             return norvecData;
         }
 
-        /*=========================================テスト====================================================================*/
-        private double[,] Test(int[] VertexData)
+        /*=========================================頂点マップから法線マップを作成する関数(Holzerらの手法)====================================================================*/
+        private double[,] NormalmapCreate(int[] VertexData)
         {
             //x方向:vx , y方向:vy , 法線方向:normalData
             double[,] normalData = new double[depthFrameDescription.LengthInPixels, 3];
             double[] vx = new double[3];
             double[] vy = new double[3];
             double[] n = new double[3];
-            int px0, px1, py0, py1 = 0;
-            int xd = (int)colorFrameDescription.BytesPerPixel;
-            int yd = (int)(depthFrameDescription.Width * colorFrameDescription.BytesPerPixel);
+            int px0, px1, py0, py1;
+            int y_dis = (int)(depthFrameDescription.Width * colorFrameDescription.BytesPerPixel);
+            int x_dis = (int)(colorFrameDescription.BytesPerPixel);
             for (int i = 0; i < this.depthFrameData.Length; ++i)
             {
-                int vecIndex = (int)(i * colorFrameDescription.BytesPerPixel);
+                int pIndex = (int)(i * colorFrameDescription.BytesPerPixel);
                 //x方向の傾きベクトル
-                px0 = (vecIndex - xd < 0 ? 0 : vecIndex - xd);
-                px1 = (vecIndex + xd > VertexData.Length - 1 ? 0 : vecIndex + xd);
-                vx[0] = (VertexData[px1++] - VertexData[px0++]) * 0.5;
-                vx[1] = (VertexData[px1++] - VertexData[px0++]) * 0.5;
-                vx[2] = (VertexData[px1] - VertexData[px0]) * 0.5;
+                px0 = pIndex - x_dis < 0 ? 0 : pIndex - x_dis;
+                px1 = pIndex + x_dis > VertexData.Length - 1 ? 0 : pIndex + x_dis;
+                vx[0] = (VertexData[px1] - VertexData[px0]) * 0.5;
+                vx[1] = (VertexData[++px1] - VertexData[++px0]) * 0.5;
+                vx[2] = (VertexData[++px1] - VertexData[++px0]) * 0.5;
 
                 //y方向の傾きベクトル
-                py0 = (vecIndex - yd < 0 ? 0 : vecIndex - yd);
-                py1 = (vecIndex + yd > VertexData.Length - 1 ? 0 : vecIndex + yd);
-                vy[0] = (VertexData[py1++] - VertexData[py0++]) * 0.5;
-                vy[1] = (VertexData[py1++] - VertexData[py0++]) * 0.5;
-                vy[2] = (VertexData[py1] - VertexData[py0]) * 0.5;
+                py0 = (pIndex - y_dis < 0 ? 0 : pIndex - y_dis);
+                py1 = (pIndex + y_dis > VertexData.Length - 1 ? 0 : pIndex + y_dis);
+                vy[0] = (VertexData[py1] - VertexData[py0]) * 0.5;
+                vy[1] = (VertexData[++py1] - VertexData[++py0]) * 0.5;
+                vy[2] = (VertexData[++py1] - VertexData[++py0]) * 0.5;
                 //↑でおかしい？
 
                 n = VecNormalized(VecCross(vx, vy));
-                //if(n[2] > 0) Debug.WriteLine(n[2]);
                 normalData[i, 0] = n[0];
                 normalData[i, 1] = n[1];
                 normalData[i, 2] = n[2];
             }
+            Debug.WriteLine(colorFrameDescription.BytesPerPixel);
             //画像に出力
             var normalImage = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             for (int i = 0; i < depthFrameData.Length; ++i)
             {
                 int normalImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
                 //頂点座標
-                normalImage[normalImageIndex] = (byte)((normalData[i, 0] + 1) * 0.5 * 255);//x
-                normalImage[normalImageIndex + 1] = (byte)((normalData[i, 1] + 1) * 0.5 * 255);//y
+                normalImage[normalImageIndex + 0] = (byte)((normalData[i, 0] + 1) * 127.5);//x
+                normalImage[normalImageIndex + 1] = (byte)((normalData[i, 1] + 1) * 127.5);//y
                 normalImage[normalImageIndex + 2] = (byte)(normalData[i, 2] * 255);//z
             }
             //頂点マップの表示
@@ -416,26 +403,27 @@ namespace kinect_test
         }
         /*=========================================↑テスト=================================================================*/
 
-        //積分画像の作成（MAX 1,736,704,000 : 424*512*8000）
-        private uint[] IntegralImage(ushort[] depthFrameData)
+        //積分画像作成
+        private uint[] MakeIntegralImage(ushort[] depthFrameData)
         {
             uint[] integralimg = new uint[depthFrameDescription.Width * depthFrameDescription.Height];
+            integralimg[0] = depthFrameData[0];
             int xm = 0;
             int ym = 0;
-            integralimg[0] = depthFrameData[0];
-            for(int i = 1; i < depthFrameDescription.Width * depthFrameDescription.Height; i++)
+            for (int i = 1; i < depthFrameDescription.Width * depthFrameDescription.Height; i++)
             {
                 xm = i % depthFrameDescription.Width;
                 ym = i / depthFrameDescription.Width;
                 if(ym == 0)
                 {
-                    integralimg[i] = integralimg[i - 1] + depthFrameData[i];
-                }else if(xm == 0)
+                    integralimg[xm] = integralimg[xm - 1] + depthFrameData[xm];
+                }else if (xm == 0)
                 {
                     integralimg[i] = integralimg[i - depthFrameDescription.Width] + depthFrameData[i];
-                }else
+                }
+                else
                 {
-                    integralimg[i] = integralimg[i - 1] + integralimg[i - depthFrameDescription.Width] - integralimg[i - depthFrameDescription.Width] + depthFrameData[i];
+                    integralimg[i] = integralimg[i - 1] + integralimg[i - depthFrameDescription.Width] - integralimg[i - depthFrameDescription.Width - 1] + depthFrameData[i];
                 }
             }
             return integralimg;
@@ -443,43 +431,47 @@ namespace kinect_test
 
         private ushort Depthregionave(uint[] inteim, int m, int n, int r)
         {
-            ushort s = (ushort)(inteim[(n+r)* depthFrameDescription.Width + m + r] - inteim[(n + r) * depthFrameDescription.Width - m - r]
+            ushort s = (ushort)(inteim[(n + r) * depthFrameDescription.Width + m + r] - inteim[(n + r) * depthFrameDescription.Width - m - r]
                  + inteim[(n - r) * depthFrameDescription.Width + m - r] - inteim[(n - r) * depthFrameDescription.Width - m - r]);
             return s;
         }
 
         //バイラテラルフィルタ
-        private ushort[] BilateralFilter(ushort[] depth)
+        private ushort[] BilateralFilter(ushort[] depthFrameData)
         {
             int uw = 0;
             int uh = 0;
-            ushort[] smoothingdepth = new ushort[depth.Length];
-            for(int i = 0; i < depthFrameData.Length; i++)
+            double a = -0.001;
+            double b = -0.01;
+            ushort[] smoothingdepth = new ushort[depthFrameData.Length];
+            float w_deno;
+            float d_mole;
+            for (int i = 0; i < depthFrameData.Length; i++)
             {
                 uw = i % depthFrameDescription.Width;
                 uh = i / depthFrameDescription.Width;
+                w_deno = 0;
+                d_mole = 0;
                 //5*5のフィルタ
-                for (int j = -2; j < 3; j++)
+                for (int m = -2; m < 3; m++)//h
                 {
-                    for(int k = -2; k < 3; k++)
+                    for (int n = -2; n < 3; n++)//w
                     {
-
+                        if(uh == (i-2)/ depthFrameDescription.Width && uh == (i + 2) / depthFrameDescription.Width
+                            && uw - 2 > 0 && uw + 2 < depthFrameDescription.Width && uh + 2 < depthFrameDescription.Height && uh - 2 > 0)
+                        {
+                            float dis = m * m + n * n;
+                            double dep = Math.Pow(depthFrameData[i] - depthFrameData[i + m * depthFrameDescription.Width + n], 2);
+                            d_mole += (float)(depthFrameData[i + m * depthFrameDescription.Width + n] * Math.Exp(dis * a) * Math.Exp(dep * b));
+                            w_deno += (float)(Math.Exp(dis * a) * Math.Exp(dep * b));
+                        }
                     }
                 }
+                smoothingdepth[i] = (ushort)(d_mole / w_deno);
             }
             return smoothingdepth;
         }
 
-
-        /*小さい値でやった場合計算はOK*/
-        private Vector3 Normalized(int x, int y, int z)
-        {
-            var dis = x * x + y * y + z * z;
-            double leng = 1 / Math.Sqrt(dis);//doubleの範囲を超えてる可能性
-            Vector3 normvec = new Vector3((float)((double)x * leng), (float)((double)y * leng), (float)((double)z * leng));
-            //Debug.WriteLine(normvec);
-            return normvec;
-        }
 
         void OnClick(object sender, RoutedEventArgs e)
         {

@@ -478,12 +478,17 @@ namespace kinect_test
             click = true;
         }
 
-        const int CLASS_NUM = 16;
-        private void Kmeans_segmentation()
+        private void Kmeans_segmentation(byte[] colorbuffer)
         {
             //Cv2.Kmeans;
+            const int CLASS = 16;
+            InputArray.Create(colorbuffer);
+            Mat test = new Mat(new OpenCvSharp.Size(depthFrameDescription.Width, depthFrameDescription.Height), MatType.CV_8UC3);
+            var clusters = new InputOutputArray ;
+            var center = new List<byte>();
+            TermCriteria criteria = new TermCriteria(CriteriaType.Eps,10, 1.0);
+            Cv2.Kmeans(colorbuffer, CLASS, clusters, criteria, 1, KMeansFlags.UseInitialLabels, OutputArray.Create(center));
         }
-
         /// <summary>
         /// この WPF アプリケーションが終了するときに実行されるメソッド。
         /// </summary>

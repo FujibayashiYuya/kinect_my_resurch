@@ -7,6 +7,7 @@ using System.Runtime;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Collections.Generic;
 using Microsoft.Kinect;
 using OpenCvSharp;
 using OpenCvSharp.WpfExtensions;
@@ -157,8 +158,6 @@ namespace kinect_test
                 click = false;
                 calibrationData = mapper.GetDepthCameraIntrinsics();
 
-                //(0)Depthの積分画像を作成
-
                 //(1)Depthの平滑化
                 //Depthが取得できず、周りの情報も不足している場所の保存
                 /*
@@ -178,6 +177,7 @@ namespace kinect_test
                     encoder.Save(stream);
                 }*/
                 Mat src = BitmapSourceConverter.ToMat(depth);
+                Kmeans_segmentation(colorFrameData);
 
                 //頂点マップの作成
                 var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
@@ -260,7 +260,7 @@ namespace kinect_test
             //n(u) = norm(vx×vy)
             var vx = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             var vy = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-            
+
             for (int i = 0; i < this.depthFrameData.Length; ++i)
             {
                 int vecIndex = (int)(i * colorFrameDescription.BytesPerPixel);
@@ -359,7 +359,7 @@ namespace kinect_test
                 normalData[i, 1] = n[1];
                 normalData[i, 2] = n[2];
             }
-            Debug.WriteLine(colorFrameDescription.BytesPerPixel);
+
             //画像に出力
             var normalImage = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             for (int i = 0; i < depthFrameData.Length; ++i)
@@ -414,10 +414,11 @@ namespace kinect_test
             {
                 xm = i % depthFrameDescription.Width;
                 ym = i / depthFrameDescription.Width;
-                if(ym == 0)
+                if (ym == 0)
                 {
                     integralimg[xm] = integralimg[xm - 1] + depthFrameData[xm];
-                }else if (xm == 0)
+                }
+                else if (xm == 0)
                 {
                     integralimg[i] = integralimg[i - depthFrameDescription.Width] + depthFrameData[i];
                 }
@@ -457,7 +458,7 @@ namespace kinect_test
                 {
                     for (int n = -2; n < 3; n++)//w
                     {
-                        if(uh == (i-2)/ depthFrameDescription.Width && uh == (i + 2) / depthFrameDescription.Width
+                        if (uh == (i - 2) / depthFrameDescription.Width && uh == (i + 2) / depthFrameDescription.Width
                             && uw - 2 > 0 && uw + 2 < depthFrameDescription.Width && uh + 2 < depthFrameDescription.Height && uh - 2 > 0)
                         {
                             float dis = m * m + n * n;
@@ -482,12 +483,48 @@ namespace kinect_test
         {
             //Cv2.Kmeans;
             const int CLASS = 16;
-            InputArray.Create(colorbuffer);
-            Mat test = new Mat(new OpenCvSharp.Size(depthFrameDescription.Width, depthFrameDescription.Height), MatType.CV_8UC3);
-            var clusters = new InputOutputArray ;
-            var center = new List<byte>();
-            TermCriteria criteria = new TermCriteria(CriteriaType.Eps,10, 1.0);
-            Cv2.Kmeans(colorbuffer, CLASS, clusters, criteria, 1, KMeansFlags.UseInitialLabels, OutputArray.Create(center));
+            using (Mat src = new Mat(depthFrameDescription.Width * depthFrameDescription.Height, 1, MatType.CV_32FC3))
+            {
+                using (Mat cluster = new Mat())
+                {
+                    using (Mat center = new Mat(CLASS, 1, MatType.CV_32FC3))
+                    {
+                        int i = 0;
+                        long index = 0;
+                        //引数byte[]をKmeans()に適した形にする
+                        for(int y = 0; y < depthFrameDescription.Height; y++)
+                        {
+                            for (int x = 0; x < depthFrameDescription.Width; x++ ,i++){
+                                index = i * colorFrameDescription.BytesPerPixel;
+                                Vec3f vec3f = new Vec3f
+                                {
+                                    Item0 = colorbuffer[index],
+                                    Item1 = colorbuffer[index + 1],
+                                    Item2 = colorbuffer[index + 2]
+                                };
+                                src.Set<Vec3f>(i, vec3f);
+                            }
+                        }
+                        var criteria = new TermCriteria(type: CriteriaType.Eps | CriteriaType.MaxIter, maxCount: 10, epsilon: 1.0);
+                        Cv2.Kmeans(src, CLASS, cluster, criteria, 3, KMeansFlags.PpCenters, center);
+                    }
+                }
+            }
+            //https://stackoverflow.com/questions/58221925/acces-to-centroid-cluster-color-after-k-means-in-c-sharp
+            /*
+            src = Cv2.ImDecode(colorbuffer, ImreadModes.Color);
+            Debug.WriteLine(src.Data);
+            Debug.WriteLine("横幅は" + src.Width);
+            src.ConvertTo(src, MatType.CV_32F);
+            
+            //Cv2.ImShow("out", src);
+
+            InputArray srcArr = InputArray.Create(src);
+            TermCriteria criteria = new TermCriteria(CriteriaType.Eps, 10, 1.0);
+            Cv2.Kmeans(src, CLASS, InputOutputArray.Create(cluster), criteria, 1, KMeansFlags.UseInitialLabels, OutputArray.Create(center));
+            */
+            //byte[]をMatに変換：https://github.com/shimat/opencvsharp/issues/173
+            //https://stackoverflow.com/questions/58221925/acces-to-centroid-cluster-color-after-k-means-in-c-sharp
         }
         /// <summary>
         /// この WPF アプリケーションが終了するときに実行されるメソッド。

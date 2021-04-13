@@ -482,23 +482,24 @@ namespace kinect_test
         private void Kmeans_segmentation(byte[] colorbuffer)
         {
             //Cv2.Kmeans;
-            const int CLASS = 16;
+            const int CLASS = 8;
             using (Mat src = new Mat(depthFrameDescription.Width * depthFrameDescription.Height, 1, MatType.CV_32FC3))
             {
                 using (Mat cluster = new Mat())
                 {
-                    using (Mat center = new Mat(CLASS, 1, MatType.CV_32FC3))
+                    using (Mat centers = new Mat(CLASS, 1, MatType.CV_32FC3))
                     {
                         int i = 0;
                         long index = 0;
                         //引数byte[]をKmeans()に適した形にする
-                        for(int y = 0; y < depthFrameDescription.Height; y++)
+                        for (int y = 0; y < depthFrameDescription.Height; y++)
                         {
-                            for (int x = 0; x < depthFrameDescription.Width; x++ ,i++){
-                                index = i * colorFrameDescription.BytesPerPixel;
+                            for (int x = 0; x < depthFrameDescription.Width; x++, i++)
+                            {
+                                index = (y * colorFrameDescription.Width + x) * colorFrameDescription.BytesPerPixel;
                                 Vec3f vec3f = new Vec3f
                                 {
-                                    Item0 = colorbuffer[index],
+                                    Item0 = colorbuffer[index + 0],
                                     Item1 = colorbuffer[index + 1],
                                     Item2 = colorbuffer[index + 2]
                                 };
@@ -506,10 +507,38 @@ namespace kinect_test
                             }
                         }
                         var criteria = new TermCriteria(type: CriteriaType.Eps | CriteriaType.MaxIter, maxCount: 10, epsilon: 1.0);
-                        Cv2.Kmeans(src, CLASS, cluster, criteria, 3, KMeansFlags.PpCenters, center);
+                        Cv2.Kmeans(src, CLASS, cluster, criteria, 3, KMeansFlags.PpCenters, centers);
+                        for(int g = 0; g < CLASS; g++)Debug.WriteLine(centers.At<Vec3f>(g));
+                        i = 0;
+                        Mat output = new Mat(depthFrameDescription.Height, depthFrameDescription.Width, MatType.CV_8UC3);
+                        for (int y = 0; y < depthFrameDescription.Height; y++)
+                        {
+                            for (int x = 0; x < depthFrameDescription.Width; x++, i++)
+                            {
+                                int ind = cluster.Get<int>(i);
+
+                                Vec3b col = new Vec3b();
+
+                                int firstComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[0]));
+                                firstComponent = firstComponent > 255 ? 255 : firstComponent < 0 ? 0 : firstComponent;
+                                col[0] = Convert.ToByte(firstComponent);
+                                
+                                int secondComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[1]));
+                                secondComponent = secondComponent > 255 ? 255 : secondComponent < 0 ? 0 : secondComponent;
+                                col[1] = Convert.ToByte(secondComponent);
+
+                                int thirdComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[2]));
+                                thirdComponent = thirdComponent > 255 ? 255 : thirdComponent < 0 ? 0 : thirdComponent;
+                                col[2] = Convert.ToByte(thirdComponent);
+                                if (i < 20) Debug.WriteLine(col);
+                                output.Set<Vec3b>(y, x, col);
+                            }
+                        }
+                        Cv2.ImShow("km",output);
                     }
                 }
             }
+        }
             //https://stackoverflow.com/questions/58221925/acces-to-centroid-cluster-color-after-k-means-in-c-sharp
             /*
             src = Cv2.ImDecode(colorbuffer, ImreadModes.Color);
@@ -518,14 +547,12 @@ namespace kinect_test
             src.ConvertTo(src, MatType.CV_32F);
             
             //Cv2.ImShow("out", src);
-
             InputArray srcArr = InputArray.Create(src);
             TermCriteria criteria = new TermCriteria(CriteriaType.Eps, 10, 1.0);
             Cv2.Kmeans(src, CLASS, InputOutputArray.Create(cluster), criteria, 1, KMeansFlags.UseInitialLabels, OutputArray.Create(center));
             */
             //byte[]をMatに変換：https://github.com/shimat/opencvsharp/issues/173
             //https://stackoverflow.com/questions/58221925/acces-to-centroid-cluster-color-after-k-means-in-c-sharp
-        }
         /// <summary>
         /// この WPF アプリケーションが終了するときに実行されるメソッド。
         /// </summary>

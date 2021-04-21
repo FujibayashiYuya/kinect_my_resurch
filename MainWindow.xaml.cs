@@ -177,7 +177,7 @@ namespace kinect_test
                     encoder.Save(stream);
                 }*/
                 Mat src = BitmapSourceConverter.ToMat(depth);
-                Kmeans_segmentation(colorFrameData);
+                Kmeans_segmentation(colorImageBuffer);
 
                 //頂点マップの作成
                 var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
@@ -496,7 +496,7 @@ namespace kinect_test
                         {
                             for (int x = 0; x < depthFrameDescription.Width; x++, i++)
                             {
-                                index = (y * colorFrameDescription.Width + x) * colorFrameDescription.BytesPerPixel;
+                                index = (y * depthFrameDescription.Width + x) * colorFrameDescription.BytesPerPixel;
                                 Vec3f vec3f = new Vec3f
                                 {
                                     Item0 = colorbuffer[index + 0],
@@ -508,7 +508,7 @@ namespace kinect_test
                         }
                         var criteria = new TermCriteria(type: CriteriaType.Eps | CriteriaType.MaxIter, maxCount: 10, epsilon: 1.0);
                         Cv2.Kmeans(src, CLASS, cluster, criteria, 3, KMeansFlags.PpCenters, centers);
-                        for(int g = 0; g < CLASS; g++)Debug.WriteLine(centers.At<Vec3f>(g));
+                        for (int g = 0; g < CLASS; g++) Debug.WriteLine(centers.At<Vec3f>(g));
                         i = 0;
                         Mat output = new Mat(depthFrameDescription.Height, depthFrameDescription.Width, MatType.CV_8UC3);
                         for (int y = 0; y < depthFrameDescription.Height; y++)
@@ -522,7 +522,7 @@ namespace kinect_test
                                 int firstComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[0]));
                                 firstComponent = firstComponent > 255 ? 255 : firstComponent < 0 ? 0 : firstComponent;
                                 col[0] = Convert.ToByte(firstComponent);
-                                
+
                                 int secondComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[1]));
                                 secondComponent = secondComponent > 255 ? 255 : secondComponent < 0 ? 0 : secondComponent;
                                 col[1] = Convert.ToByte(secondComponent);
@@ -534,25 +534,25 @@ namespace kinect_test
                                 output.Set<Vec3b>(y, x, col);
                             }
                         }
-                        Cv2.ImShow("km",output);
+                        Cv2.ImShow("km", output);
                     }
                 }
             }
         }
-            //https://stackoverflow.com/questions/58221925/acces-to-centroid-cluster-color-after-k-means-in-c-sharp
-            /*
-            src = Cv2.ImDecode(colorbuffer, ImreadModes.Color);
-            Debug.WriteLine(src.Data);
-            Debug.WriteLine("横幅は" + src.Width);
-            src.ConvertTo(src, MatType.CV_32F);
-            
-            //Cv2.ImShow("out", src);
-            InputArray srcArr = InputArray.Create(src);
-            TermCriteria criteria = new TermCriteria(CriteriaType.Eps, 10, 1.0);
-            Cv2.Kmeans(src, CLASS, InputOutputArray.Create(cluster), criteria, 1, KMeansFlags.UseInitialLabels, OutputArray.Create(center));
-            */
-            //byte[]をMatに変換：https://github.com/shimat/opencvsharp/issues/173
-            //https://stackoverflow.com/questions/58221925/acces-to-centroid-cluster-color-after-k-means-in-c-sharp
+        //https://stackoverflow.com/questions/58221925/acces-to-centroid-cluster-color-after-k-means-in-c-sharp
+        /*
+        src = Cv2.ImDecode(colorbuffer, ImreadModes.Color);
+        Debug.WriteLine(src.Data);
+        Debug.WriteLine("横幅は" + src.Width);
+        src.ConvertTo(src, MatType.CV_32F);
+
+        //Cv2.ImShow("out", src);
+        InputArray srcArr = InputArray.Create(src);
+        TermCriteria criteria = new TermCriteria(CriteriaType.Eps, 10, 1.0);
+        Cv2.Kmeans(src, CLASS, InputOutputArray.Create(cluster), criteria, 1, KMeansFlags.UseInitialLabels, OutputArray.Create(center));
+        */
+        //byte[]をMatに変換：https://github.com/shimat/opencvsharp/issues/173
+        //https://stackoverflow.com/questions/58221925/acces-to-centroid-cluster-color-after-k-means-in-c-sharp
         /// <summary>
         /// この WPF アプリケーションが終了するときに実行されるメソッド。
         /// </summary>

@@ -599,7 +599,13 @@ namespace kinect_test
 
             //Ix, Iy, Iz ⇒　HSI
             double[] hsi = new double[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-            
+            for(uint j = 0; j < depthFrameData.Length; j++)
+            {
+                index = j * colorFrameDescription.BytesPerPixel;
+                hsi[index    ] = (int)(Math.Atan(ibuffer[index + 1] / ibuffer[index]) * (180 / Math.PI)) +90;
+                hsi[index + 1] = Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);
+                hsi[index + 2] = ibuffer[index + 2];
+            }
         }
 
         //保存用

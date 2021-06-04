@@ -13,6 +13,7 @@ using OpenCvSharp;
 using OpenCvSharp.WpfExtensions;
 using System.IO;
 using Stream = System.IO.Stream;
+using System.Linq;
 
 namespace kinect_test
 {
@@ -175,12 +176,12 @@ namespace kinect_test
                 depthFrameData = BilateralFilter(depthFrameData);
                 depthFrameData = BilateralFilter(depthFrameData);
                 vertexData = VertexmapCreate(depthFrameData);
-
+                Remove_highlight(colorImageBuffer);
                 //法線マップの作成
                 normalData = NormalmapCreate(vertexData);
 
                 hsi = Create_Hsi(colorImageBuffer, hsi);
-
+                //test();
                 //カラー画像のクラスタリング
                 //Kmeans_segmentation(colorImageBuffer, vertexData);
                 Km_hsi(hsi, normalData);
@@ -599,50 +600,88 @@ namespace kinect_test
 
             //Ix, Iy, Iz ⇒　HSI
             double[] hsi = new double[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            //最小二乗法による傾きを格納・そのための二乗和と積和
+            double[] tilt = new double[depthFrameDescription.LengthInPixels];
+            double[] squares_Sum = new double[depthFrameDescription.LengthInPixels];
+            double[] multipl_Sum = new double[depthFrameDescription.LengthInPixels];
+
             for (uint j = 0; j < depthFrameData.Length; j++)
             {
                 index = j * colorFrameDescription.BytesPerPixel;
-                hsi[index] = (int)(Math.Atan(ibuffer[index + 1] / ibuffer[index]) * (180 / Math.PI)) + 90;
-                hsi[index + 1] = Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);
-                hsi[index + 2] = ibuffer[index + 2];
+                if (ibuffer[index] != 0)
+                {
+                    hsi[index] = (int)(Math.Atan(ibuffer[index + 1] / ibuffer[index]) * (180 / Math.PI)) + 90;//hue 後に番号として使うので整数にする
+                    hsi[index + 1] = Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);//saturation
+                    hsi[index + 2] = ibuffer[index + 2];//intensity
+                }
+            }
+            
+            //問題：Saturationに対する最小のintensityを導かないといけない
+            //sortすると座標が狂うので、hsi[]は座標保持で最終的にRGBまで逆算で求める用
+            //hueごとの傾きを求める用にhsitを用いる
+
+            //以下試し
+            int hue = 0;
+            double saturation, intensity = 0;
+            var hsit = new List<List<Vec2d>>();
+            hsit.Add(new List<Vec2d>());
+            for(int i = 0; i < 360; i++)
+            {
+                hsit.Add(new List<Vec2d>());
+            }
+            for (uint j = 0; j < depthFrameData.Length; j++)
+            {
+                index = j * colorFrameDescription.BytesPerPixel;
+                if (ibuffer[index] != 0)//これでok
+                {
+                    hue = (int)(Math.Atan(ibuffer[index + 1] / ibuffer[index]) * (180 / Math.PI)) + 90;
+                    saturation = Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);
+                    intensity = ibuffer[index + 2];
+                    Vec2d si = new Vec2d(saturation, intensity);
+                    hsit[hue].Add(si);
+                }
+            }
+
+            for(int k = 0; k < 360; k++)
+            {
+                hsit[k].Sort();
             }
         }
 
         //保存用
         private void test()
-        {
-            //HSI色空間を求める　hue：番号｛saturation、intensity｝
-            var hsi = new List<List<Vec2d>>();
-            var hsin = new Vec2d[180][];
-            //hsiの容量を確保
-            hsi.Add(new List<Vec2d>());
-            hsi[0].Add(new Vec2d(0, 0));
-            hsi[0].Add(new Vec2d(1, 1));
-            hsi[1].Add(new Vec2d(1, 1));
-            Debug.WriteLine("a" + hsi[0][0] + hsi[0][1]);
-            for (int i = 0; i < 181; i++)
             {
-                hsi[i].Add(new Vec2d(0, 0));
-            }
-            double hue = 0;
-            int hue_angle = 0;
-            double saturation = 0;
-            double intensity = 0;
-            /*
-            for (uint j = 0; j < depthFrameData.Length; j++)
-            {
-                index = j * colorFrameDescription.BytesPerPixel;
-                if (ibuffer[index] != 0)//0の場合、分母が０になり数字がおかしくなる
+                //HSI色空間を求める　hue：番号｛saturation、intensity｝
+                var hsi = new List<List<Vec2d>>();
+                var hsin = new Vec2d[180][];
+                //hsiの容量を確保
+                //hsi.Add(new List<Vec2d>());
+                hsi[0].Add(new Vec2d(0, 0));
+                hsi[0].Add(new Vec2d(1, 1));
+                //hsi[1].Add(new Vec2d(1, 1));//インデックスが範囲を超えています。負でない値で、コレクションのサイズよりも小さくなければなりません。
+                Debug.WriteLine("a" + hsi[0][0] + hsi[0][1]);
+                for (int i = 0; i < 181; i++)
                 {
-                    hue = (int)Math.Atan(ibuffer[index + 1] / ibuffer[index]);
-                    hue_angle = (int)(hue * (180 / Math.PI)) + 90;
-                    saturation = Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);
-                    intensity = ibuffer[index + 2];
-                    Debug.WriteLine(hue +" , "  + hue_angle + " , "+ saturation +" , " +  intensity);
-                    hsi[hue_angle].Add(new Vec2d(saturation, intensity));
+                    hsi[i].Add(new Vec2d(0, 0));
                 }
-            }*/
-
+                double hue = 0;
+                int hue_angle = 0;
+                double saturation = 0;
+                double intensity = 0;
+                /*
+                for (uint j = 0; j < depthFrameData.Length; j++)
+                {
+                    index = j * colorFrameDescription.BytesPerPixel;
+                    if (ibuffer[index] != 0)//0の場合、分母が０になり数字がおかしくなる
+                    {
+                        hue = (int)Math.Atan(ibuffer[index + 1] / ibuffer[index]);
+                        hue_angle = (int)(hue * (180 / Math.PI)) + 90;
+                        saturation = Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);
+                        intensity = ibuffer[index + 2];
+                        Debug.WriteLine(hue +" , "  + hue_angle + " , "+ saturation +" , " +  intensity);
+                        hsi[hue_angle].Add(new Vec2d(saturation, intensity));
+                    }
+                }*/
         }
 
         /*=============使わなくなった関数=====================================================================================================*/

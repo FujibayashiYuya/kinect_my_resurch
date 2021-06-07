@@ -131,10 +131,11 @@ namespace kinect_test
                 int colorIndex = colorY * colorFrameDescription.Width + colorX;
                 int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
                 int colorBufferIndex = (int)(colorIndex * colorFrameDescription.BytesPerPixel);
-
+                
                 colorImageBuffer[colorImageIndex + 0] = colorFrameData[colorBufferIndex + 0];
                 colorImageBuffer[colorImageIndex + 1] = colorFrameData[colorBufferIndex + 1];
                 colorImageBuffer[colorImageIndex + 2] = colorFrameData[colorBufferIndex + 2];
+                
 
                 //深度画像
                 byte intensity = (byte)(depthFrameData[i] % 255);
@@ -587,24 +588,21 @@ namespace kinect_test
         //改良中
         private void Remove_highlight(byte[] colorbuffer)
         {
+            //BGRの順に注意‼！！！！！！！！！
+            var rm_color = new byte[colorbuffer.Length];
             //RGB　⇒　Ix, Iy, Iz
             double[] ibuffer = new double[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
             uint index = 0;
             for (uint i = 0; i < depthFrameData.Length; i++)
             {
                 index = i * colorFrameDescription.BytesPerPixel;
-                ibuffer[index] = colorbuffer[index] - 0.5 * colorbuffer[index + 1] - 0.5 * colorbuffer[index + 2];   //Ix
-                ibuffer[index + 1] = (colorbuffer[index + 1] - colorbuffer[index + 2]) * 0.5 * Math.Sqrt(3);             //Iy
-                ibuffer[index + 2] = (double)colorbuffer[index] / 3 + (double)colorbuffer[index + 1] / 3 + (double)colorbuffer[index + 2] / 3;//Iz   
+                ibuffer[index] = colorbuffer[index + 2] - 0.5 * colorbuffer[index + 1] - 0.5 * colorbuffer[index];   //Ix
+                ibuffer[index + 1] = (colorbuffer[index + 1] - colorbuffer[index]) * 0.5 * Math.Sqrt(3);             //Iy
+                ibuffer[index + 2] = (double)colorbuffer[index + 2] / 3 + (double)colorbuffer[index + 1] / 3 + (double)colorbuffer[index] / 3;//Iz   
             }
 
             //Ix, Iy, Iz ⇒　HSI
             double[] hsi = new double[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
-            //最小二乗法による傾きを格納・そのための二乗和と積和
-            double[] tilt = new double[depthFrameDescription.LengthInPixels];
-            double[] squares_Sum = new double[depthFrameDescription.LengthInPixels];
-            double[] multipl_Sum = new double[depthFrameDescription.LengthInPixels];
-
             for (uint j = 0; j < depthFrameData.Length; j++)
             {
                 index = j * colorFrameDescription.BytesPerPixel;
@@ -619,10 +617,6 @@ namespace kinect_test
             //問題：Saturationに対する最小のintensityを導かないといけない
             //sortすると座標が狂うので、hsi[]は座標保持で最終的にRGBまで逆算で求める用
             //hueごとの傾きを求める用にhsitを用いる
-
-            //以下試し
-            int hue = 0;
-            double saturation, intensity = 0;
             var hsit = new List<List<Vec2d>>();
             hsit.Add(new List<Vec2d>());
             for(int i = 0; i < 360; i++)
@@ -634,54 +628,74 @@ namespace kinect_test
                 index = j * colorFrameDescription.BytesPerPixel;
                 if (ibuffer[index] != 0)//これでok
                 {
-                    hue = (int)(Math.Atan(ibuffer[index + 1] / ibuffer[index]) * (180 / Math.PI)) + 90;
-                    saturation = Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);
-                    intensity = ibuffer[index + 2];
-                    Vec2d si = new Vec2d(saturation, intensity);
-                    hsit[hue].Add(si);
+                    Vec2d si = new Vec2d(hsi[index + 1], hsi[index + 2]);
+                    hsit[(int)hsi[index]].Add(si);
                 }
             }
 
-            for(int k = 0; k < 360; k++)
+            //最小二乗法による傾きを格納・そのための二乗和と積和
+            double[] tilt = new double[depthFrameDescription.LengthInPixels]; // 傾き
+            double[] squares_Sum = new double[depthFrameDescription.LengthInPixels];//二乗和
+            double[] multipl_Sum = new double[depthFrameDescription.LengthInPixels];//積和
+            //hueごとにsaturationで昇順＋同じ場合はintensityで昇順
+            for (int k = 0; k < 360; k++)
             {
-                hsit[k].Sort();
-            }
-        }
-
-        //保存用
-        private void test()
-            {
-                //HSI色空間を求める　hue：番号｛saturation、intensity｝
-                var hsi = new List<List<Vec2d>>();
-                var hsin = new Vec2d[180][];
-                //hsiの容量を確保
-                //hsi.Add(new List<Vec2d>());
-                hsi[0].Add(new Vec2d(0, 0));
-                hsi[0].Add(new Vec2d(1, 1));
-                //hsi[1].Add(new Vec2d(1, 1));//インデックスが範囲を超えています。負でない値で、コレクションのサイズよりも小さくなければなりません。
-                Debug.WriteLine("a" + hsi[0][0] + hsi[0][1]);
-                for (int i = 0; i < 181; i++)
+                //var sorted = new List<Vec2d>(hsit[k].Count);
+                var sorted = hsit[k].OrderBy(e => e[0]).ThenBy(e => e[1]).ToList();
+                //saturationの値が同じとき最小のintensityに書き換えておく
+                for(int l = 0; l < sorted.Count(); l++)
                 {
-                    hsi[i].Add(new Vec2d(0, 0));
-                }
-                double hue = 0;
-                int hue_angle = 0;
-                double saturation = 0;
-                double intensity = 0;
-                /*
-                for (uint j = 0; j < depthFrameData.Length; j++)
-                {
-                    index = j * colorFrameDescription.BytesPerPixel;
-                    if (ibuffer[index] != 0)//0の場合、分母が０になり数字がおかしくなる
+                    //saturationに対する最小のintensity
+                    if(l > 0 && sorted[l-1][0] == sorted[l][0])
                     {
-                        hue = (int)Math.Atan(ibuffer[index + 1] / ibuffer[index]);
-                        hue_angle = (int)(hue * (180 / Math.PI)) + 90;
-                        saturation = Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);
-                        intensity = ibuffer[index + 2];
-                        Debug.WriteLine(hue +" , "  + hue_angle + " , "+ saturation +" , " +  intensity);
-                        hsi[hue_angle].Add(new Vec2d(saturation, intensity));
+                        sorted[l] = sorted[l - 1];
                     }
-                }*/
+                    squares_Sum[k] += sorted[l][0] * sorted[l][0];
+                    multipl_Sum[k] += sorted[l][0] * sorted[l][1];
+                }
+                //hueごとの傾きを求める
+                tilt[k] = multipl_Sum[k] / squares_Sum[k];
+            }
+
+            //求めた傾きでhsi[]のintensityの値だけ計算し直す
+            for (uint m = 0; m < depthFrameData.Length; m++)
+            {
+                index = m * colorFrameDescription.BytesPerPixel;
+                if (ibuffer[index] != 0)
+                {
+                    hsi[index + 2] = tilt[(int)hsi[index]] * hsi[index + 1];//intensity
+                }
+            }
+
+            //hsiからカラー画像(rgb)への逆変換
+            
+            double ix, iy, iz = 0;
+            for (uint j = 0; j < depthFrameData.Length; j++)
+            {
+                index = j * colorFrameDescription.BytesPerPixel;
+                ix = hsi[index + 1] * Math.Cos(hsi[index]);
+                iy = hsi[index + 1] * Math.Sin(hsi[index]);
+                iz = hsi[index + 2];
+                //BGRの順
+                rm_color[index] = (byte)(iz - ix / 3 - iy * Math.Sqrt(1/3));
+                rm_color[index + 1] = (byte)(iz - ix / 3 + iy * Math.Sqrt(1/3));
+                rm_color[index + 2] = (byte)(iz + ix * 2 / 3);
+            }
+            /*
+            for (uint j = 0; j < depthFrameData.Length; j++)
+            {
+                index = j * colorFrameDescription.BytesPerPixel;
+                rm_color[index] = (byte)(ibuffer[index + 2] - ibuffer[index] / 3 - ibuffer[index + 1] * Math.Sqrt(1 / 3));
+                rm_color[index + 1] = (byte)(ibuffer[index + 2] - ibuffer[index] / 3 + ibuffer[index + 1] * Math.Sqrt(1 / 3));
+                rm_color[index + 2] = (byte)(ibuffer[index + 2] + ibuffer[index] * 2 / 3);
+            }
+            */
+                //表示
+                BitmapSource rem_color = BitmapSource.Create(this.depthFrameDescription.Width,
+                this.depthFrameDescription.Height,
+                96, 96, PixelFormats.Bgr32, null, rm_color, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+            Mat src = BitmapSourceConverter.ToMat(rem_color);
+            Cv2.ImShow("re_col", src);
         }
 
         /*=============使わなくなった関数=====================================================================================================*/

@@ -181,6 +181,7 @@ namespace kinect_test
                 ibuffer = Ispace_fromRGB(colorImageBuffer, ibuffer);
                 hsi = Hsi_fromRGB(ibuffer, hsi);
                 rm_color = Remove_specular(ibuffer, hsi, colorImageBuffer, rm_color);
+                Sfimage_miyazaki(ibuffer, rm_color);
 
                 //法線マップの作成
                 normalData = NormalmapCreate(vertexData);
@@ -741,13 +742,26 @@ namespace kinect_test
                 if (colorbuffer[index] != colorbuffer[index + 1] && colorbuffer[index + 1] != colorbuffer[index + 2])
                 {
                     hsi[index] = (hsi[index] - 90) * Math.PI / 180;
-                    ix = hsi[index + 1] * Math.Cos(hsi[index]);
-                    iy = hsi[index + 1] * Math.Sin(hsi[index]);
-                    iz = hsi[index + 2];
-                    //BGRの順
-                    rm_color[index] = (byte)(iz - ix / 3 - iy / Math.Sqrt(3));
-                    rm_color[index + 1] = (byte)(iz - ix / 3 + iy / Math.Sqrt(3));
-                    rm_color[index + 2] = (byte)(iz + ix * 2 / 3);
+                    if (ibuffer[index] < 0 && ibuffer[index + 1] < 0)
+                    {
+                        ix = hsi[index + 1] * Math.Cos(hsi[index]) * -1;
+                        iy = hsi[index + 1] * Math.Sin(hsi[index]) * -1;
+                        iz = hsi[index + 2];
+                        //BGRの順
+                        rm_color[index] = (byte)(iz - ix / 3 - iy / Math.Sqrt(3));
+                        rm_color[index + 1] = (byte)(iz - ix / 3 + iy / Math.Sqrt(3));
+                        rm_color[index + 2] = (byte)(iz + ix * 2 / 3);
+                    }
+                    else
+                    {
+                        ix = hsi[index + 1] * Math.Cos(hsi[index]);
+                        iy = hsi[index + 1] * Math.Sin(hsi[index]);
+                        iz = hsi[index + 2];
+                        //BGRの順
+                        rm_color[index] = (byte)(iz - ix / 3 - iy / Math.Sqrt(3));
+                        rm_color[index + 1] = (byte)(iz - ix / 3 + iy / Math.Sqrt(3));
+                        rm_color[index + 2] = (byte)(iz + ix * 2 / 3);
+                    }
                 }
                 else
                 {
@@ -762,6 +776,32 @@ namespace kinect_test
             96, 96, PixelFormats.Bgr32, null, rm_color, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
             Mat src = BitmapSourceConverter.ToMat(rem_color);
             Cv2.ImShow("re_col", src);
+            return rm_color;
+        }
+
+        private byte[] Sfimage_miyazaki(double[] ibuffer, byte[] rm_color)
+        {
+            double[] mbuffer = new double[ibuffer.Length];
+            double a = 1.0;
+            for(int i = 0; i < depthFrameData.Length; i++)
+            {
+                int index = i * (int)colorFrameDescription.BytesPerPixel;
+                mbuffer[index + 0] = ibuffer[index + 0];
+                mbuffer[index + 1] = ibuffer[index + 1];
+                mbuffer[index + 2] = a * Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);
+            }
+            for (int i = 0; i < depthFrameData.Length; i++)
+            {
+                int index = i * (int)colorFrameDescription.BytesPerPixel;
+                rm_color[index] = (byte)(mbuffer[index + 2] - mbuffer[index] / 3 - mbuffer[index + 1] / Math.Sqrt(3));
+                rm_color[index + 1] = (byte)(mbuffer[index + 2] - mbuffer[index] / 3 + mbuffer[index + 1] / Math.Sqrt(3));
+                rm_color[index + 2] = (byte)(mbuffer[index + 2] + mbuffer[index] * 2 / 3);
+            }
+            BitmapSource rem_color = BitmapSource.Create(this.depthFrameDescription.Width,
+            this.depthFrameDescription.Height,
+            96, 96, PixelFormats.Bgr32, null, rm_color, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+            Mat src = BitmapSourceConverter.ToMat(rem_color);
+            Cv2.ImShow("miyazaki_col", src);
             return rm_color;
         }
         #endregion

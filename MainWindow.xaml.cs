@@ -179,6 +179,8 @@ namespace kinect_test
                 depthFrameData = BilateralFilter(depthFrameData);
                 depthFrameData = BilateralFilter(depthFrameData);
                 vertexData = VertexmapCreate(depthFrameData);
+                //法線マップの作成
+                normalData = NormalmapCreate(vertexData);
 
                 //カラー画像のバイラテラルフィルタ
                 colorImageBuffer = Color_bilateral(colorImageBuffer);
@@ -189,11 +191,9 @@ namespace kinect_test
                 var rm_color = new byte[colorImageBuffer.Length];
                 ibuffer = Ispace_fromRGB(colorImageBuffer, ibuffer);
                 hsi = Hsi_fromRGB(ibuffer, hsi);
+                //鏡面反射除去
                 rm_color = Remove_specular(ibuffer, hsi, colorImageBuffer, rm_color);
                 Sfimage_miyazaki(ibuffer, rm_color);
-
-                //法線マップの作成
-                normalData = NormalmapCreate(vertexData);
 
                 //test();
                 //カラー画像のクラスタリング
@@ -822,6 +822,8 @@ namespace kinect_test
         {
             double[] mbuffer = new double[ibuffer.Length];
             double a = 1.0;
+            double b, g, r = 0;
+            byte[] mrmc = new byte[3];
             for (int i = 0; i < depthFrameData.Length; i++)
             {
                 int index = i * (int)colorFrameDescription.BytesPerPixel;
@@ -832,9 +834,13 @@ namespace kinect_test
             for (int i = 0; i < depthFrameData.Length; i++)
             {
                 int index = i * (int)colorFrameDescription.BytesPerPixel;
-                rm_color[index] = (byte)(mbuffer[index + 2] - mbuffer[index] / 3 - mbuffer[index + 1] / Math.Sqrt(3));
-                rm_color[index + 1] = (byte)(mbuffer[index + 2] - mbuffer[index] / 3 + mbuffer[index + 1] / Math.Sqrt(3));
-                rm_color[index + 2] = (byte)(mbuffer[index + 2] + mbuffer[index] * 2 / 3);
+                b = mbuffer[index + 2] - mbuffer[index] / 3 - mbuffer[index + 1] / Math.Sqrt(3);
+                g = mbuffer[index + 2] - mbuffer[index] / 3 + mbuffer[index + 1] / Math.Sqrt(3);
+                r = mbuffer[index + 2] + mbuffer[index] * 2 / 3;
+                Pixel_normaliz(mrmc, b, g, r);
+                rm_color[index] = mrmc[0];
+                rm_color[index + 1] = mrmc[1];
+                rm_color[index + 2] = mrmc[2];
             }
             BitmapSource rem_color = BitmapSource.Create(this.depthFrameDescription.Width,
             this.depthFrameDescription.Height,

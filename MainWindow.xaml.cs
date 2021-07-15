@@ -4,7 +4,6 @@ using OpenCvSharp.WpfExtensions;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Windows;
@@ -127,7 +126,6 @@ namespace kinect_test
                 int colorIndex = colorY * colorFrameDescription.Width + colorX;
                 int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
                 int colorBufferIndex = (int)(colorIndex * colorFrameDescription.BytesPerPixel);
-                
                 if (depthFrameData[i] < 1000)
                 {
                     colorImageBuffer[colorImageIndex + 0] = colorFrameData[colorBufferIndex + 0];//B
@@ -140,7 +138,6 @@ namespace kinect_test
                     colorImageBuffer[colorImageIndex + 1] = 0;
                     colorImageBuffer[colorImageIndex + 2] = 0;
                 }
-
                 //深度画像
                 byte intensity = (byte)(depthFrameData[i] % 255);
                 depthImageBuffer[colorImageIndex++] = intensity;
@@ -164,26 +161,24 @@ namespace kinect_test
                 //カラー情報とデプス情報を別で保存して、メモリ解放する
                 click = false;
                 calibrationData = mapper.GetDepthCameraIntrinsics();
+                Mat src_col = BitmapSourceConverter.ToMat(collor);
+                Cv2.ImShow("colorimage", src_col);
                 // BitmapSourceを保存する
                 /*
                 using (Stream stream = new FileStream("test.png", FileMode.Create))
                 {
                     PngBitmapEncoder encoder = new PngBitmapEncoder();
-                    encoder.Frames.Add(BitmapFrame.Create(collor));
+                    encoder.Frames.Add(BitmapFrame.Create(depth));
                     encoder.Save(stream);
                 }*/
                 //Mat src = BitmapSourceConverter.ToMat(depth);
-                Mat src = BitmapSourceConverter.ToMat(collor);
-                Cv2.ImShow("moto", src);
+
                 //頂点マップの作成
                 var vertexData = new int[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
                 double[,] normalData = new double[depthFrameDescription.LengthInPixels, 3];
                 depthFrameData = BilateralFilter(depthFrameData);
                 depthFrameData = BilateralFilter(depthFrameData);
                 vertexData = VertexmapCreate(depthFrameData);
-
-                //法線マップの作成
-                normalData = NormalmapCreate(vertexData);
 
                 //カラー画像のバイラテラルフィルタ
                 colorImageBuffer = Color_bilateral(colorImageBuffer);
@@ -195,6 +190,10 @@ namespace kinect_test
                 ibuffer = Ispace_fromRGB(colorImageBuffer, ibuffer);
                 hsi = Hsi_fromRGB(ibuffer, hsi);
                 rm_color = Remove_specular(ibuffer, hsi, colorImageBuffer, rm_color);
+                Sfimage_miyazaki(ibuffer, rm_color);
+
+                //法線マップの作成
+                normalData = NormalmapCreate(vertexData);
 
                 //test();
                 //カラー画像のクラスタリング
@@ -382,7 +381,7 @@ namespace kinect_test
             }
             return smoothingdepth;
         }
-        
+
         //カラー画像平滑化（バイラテラルフィルタ）
         private byte[] Color_bilateral(byte[] colorImageData)
         {
@@ -438,7 +437,7 @@ namespace kinect_test
             */
             return smoothincolor;
         }
-        
+
 
         void OnClick(object sender, RoutedEventArgs e)
         {
@@ -610,7 +609,6 @@ namespace kinect_test
                             centercol[num] = (byte)(sumcolor[num] / classcount[k]);
                             centercol[num + 1] = (byte)(sumcolor[num + 1] / classcount[k]);
                             centercol[num + 2] = (byte)(sumcolor[num + 2] / classcount[k]);
-
                         }
                         */
                         i = 0;
@@ -627,12 +625,12 @@ namespace kinect_test
                                 col[1] = centercol[ind + 1];//G
                                 col[2] = centercol[ind + 2];//R
                                 */
-                                
+
                                 Vec3b col = new Vec3b();
                                 col[0] = (byte)(gs * ind);
                                 col[1] = (byte)(gs * ind);
                                 col[2] = (byte)(gs * ind);
-                                
+
                                 /*
                                 int firstComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[0]));
                                 firstComponent = firstComponent > 255 ? 255 : firstComponent < 0 ? 0 : firstComponent;
@@ -670,7 +668,7 @@ namespace kinect_test
                 {
                     ibuffer[index] = colorbuffer[index + 2] - 0.5 * colorbuffer[index + 1] - 0.5 * colorbuffer[index];   //Ix
                     ibuffer[index + 1] = (colorbuffer[index + 1] - colorbuffer[index]) * 0.5 * Math.Sqrt(3);             //Iy
-                    ibuffer[index + 2] = (double)(colorbuffer[index + 2] + colorbuffer[index + 1] + colorbuffer[index]) / 3;//Iz   
+                    ibuffer[index + 2] = (double)colorbuffer[index + 2] / 3 + (double)colorbuffer[index + 1] / 3 + (double)colorbuffer[index] / 3;//Iz   
                 }
             }
             return ibuffer;
@@ -697,7 +695,8 @@ namespace kinect_test
         {
             var hsit = new List<List<Vec2d>>();
             hsit.Add(new List<Vec2d>());
-            for (int i = 0; i < 180; i++)
+            //hueを 24分割にしてみる
+            for (int i = 0; i < 24; i++)
             {
                 hsit.Add(new List<Vec2d>());
             }
@@ -708,7 +707,8 @@ namespace kinect_test
                 if (ibuffer[index] != 0)//これでok
                 {
                     Vec2d si = new Vec2d(hsi[index + 1], hsi[index + 2]);
-                    hsit[(int)hsi[index]].Add(si);
+                    //hueの分割数で変化
+                    hsit[(int)(hsi[index] / 15.0 * 2)].Add(si);
                 }
             }
             //最小二乗法による傾きを格納・そのための二乗和と積和
@@ -716,7 +716,7 @@ namespace kinect_test
             double[] squares_Sum = new double[depthFrameDescription.LengthInPixels];//二乗和
             double[] multipl_Sum = new double[depthFrameDescription.LengthInPixels];//積和
             //hueごとにsaturationで昇順＋同じ場合はintensityで昇順
-            for (int k = 0; k < 180; k++)
+            for (int k = 0; k < 24; k++)
             {
                 //var sorted = new List<Vec2d>(hsit[k].Count);
                 var sorted = hsit[k].OrderBy(e => e[0]).ThenBy(e => e[1]).ToList();
@@ -740,12 +740,16 @@ namespace kinect_test
                 index = m * colorFrameDescription.BytesPerPixel;
                 if (ibuffer[index] != 0)
                 {
-                    hsi[index + 2] = tilt[(int)hsi[index]] * hsi[index + 1];//intensity
+                    //hueの分割によって変形
+                    hsi[index + 2] = tilt[(int)(hsi[index] / 15.0 * 2)] * hsi[index + 1];//intensity
                 }
             }
 
             //hsiからカラー画像(rgb)への逆変換
             double ix, iy, iz = 0;
+            double b, g, r = 0;
+            double max = 0;
+            byte[] rmc = new byte[3];
             for (uint j = 0; j < depthFrameData.Length; j++)
             {
                 index = j * colorFrameDescription.BytesPerPixel;
@@ -757,21 +761,37 @@ namespace kinect_test
                         ix = hsi[index + 1] * Math.Cos(hsi[index]) * -1;
                         iy = hsi[index + 1] * Math.Sin(hsi[index]) * -1;
                         iz = hsi[index + 2];
-                        //BGRの順
-                        rm_color[index] = (byte)(iz - ix / 3 - iy / Math.Sqrt(3));
-                        rm_color[index + 1] = (byte)(iz - ix / 3 + iy / Math.Sqrt(3));
-                        rm_color[index + 2] = (byte)(iz + ix * 2 / 3);
                     }
                     else
                     {
                         ix = hsi[index + 1] * Math.Cos(hsi[index]);
                         iy = hsi[index + 1] * Math.Sin(hsi[index]);
                         iz = hsi[index + 2];
-                        //BGRの順
-                        rm_color[index] = (byte)(iz - ix / 3 - iy / Math.Sqrt(3));
-                        rm_color[index + 1] = (byte)(iz - ix / 3 + iy / Math.Sqrt(3));
-                        rm_color[index + 2] = (byte)(iz + ix * 2 / 3);
                     }
+                    //BGRの順
+                    b = iz - ix / 3 - iy / Math.Sqrt(3);
+                    g = iz - ix / 3 + iy / Math.Sqrt(3);
+                    r = iz + ix * 2 / 3;
+                    
+                    Pixel_normaliz(rmc, b, g, r);
+                    rm_color[index] = rmc[0];
+                    rm_color[index + 1] = rmc[1];
+                    rm_color[index + 2] = rmc[2];
+                    /*
+                    max = Math.Max(b, Math.Max(g, r));
+                    if (max > 255)
+                    {
+                        Pixel_normaliz(rmc, b, g, r);
+                        rm_color[index] = rmc[0];
+                        rm_color[index + 1] = rmc[1];
+                        rm_color[index + 2] = rmc[2];
+                    }
+                    else
+                    {
+                        rm_color[index] = (byte)b;
+                        rm_color[index + 1] = (byte)g;
+                        rm_color[index + 2] = (byte)r;
+                    }*/
                 }
                 else
                 {
@@ -786,6 +806,41 @@ namespace kinect_test
             96, 96, PixelFormats.Bgr32, null, rm_color, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
             Mat src = BitmapSourceConverter.ToMat(rem_color);
             Cv2.ImShow("re_col", src);
+            return rm_color;
+        }
+
+        private byte[] Pixel_normaliz(byte[] rmc, double b, double g, double r)
+        {
+            double max = Math.Max(b, Math.Max(g, r));
+            rmc[0] = (byte)(b / max * 255);
+            rmc[1] = (byte)(g / max * 255);
+            rmc[2] = (byte)(r / max * 255);
+            return rmc;
+        }
+
+        private byte[] Sfimage_miyazaki(double[] ibuffer, byte[] rm_color)
+        {
+            double[] mbuffer = new double[ibuffer.Length];
+            double a = 1.0;
+            for (int i = 0; i < depthFrameData.Length; i++)
+            {
+                int index = i * (int)colorFrameDescription.BytesPerPixel;
+                mbuffer[index + 0] = ibuffer[index + 0];
+                mbuffer[index + 1] = ibuffer[index + 1];
+                mbuffer[index + 2] = a * Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);
+            }
+            for (int i = 0; i < depthFrameData.Length; i++)
+            {
+                int index = i * (int)colorFrameDescription.BytesPerPixel;
+                rm_color[index] = (byte)(mbuffer[index + 2] - mbuffer[index] / 3 - mbuffer[index + 1] / Math.Sqrt(3));
+                rm_color[index + 1] = (byte)(mbuffer[index + 2] - mbuffer[index] / 3 + mbuffer[index + 1] / Math.Sqrt(3));
+                rm_color[index + 2] = (byte)(mbuffer[index + 2] + mbuffer[index] * 2 / 3);
+            }
+            BitmapSource rem_color = BitmapSource.Create(this.depthFrameDescription.Width,
+            this.depthFrameDescription.Height,
+            96, 96, PixelFormats.Bgr32, null, rm_color, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+            Mat src = BitmapSourceConverter.ToMat(rem_color);
+            Cv2.ImShow("miyazaki_col", src);
             return rm_color;
         }
         #endregion
@@ -821,7 +876,6 @@ namespace kinect_test
                 }
                 //Debug.WriteLine(hsi[index] + " " + ibuffer[index]);
             }
-
             return hsi;
         }
 

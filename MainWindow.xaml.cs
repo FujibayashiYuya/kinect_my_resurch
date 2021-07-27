@@ -195,6 +195,8 @@ namespace kinect_test
                 rm_color = Remove_specular(ibuffer, hsi, colorImageBuffer, rm_color);
                 Sfimage_miyazaki(ibuffer, rm_color);
 
+                //夏やること1．拡散反射成分と頂点画像からアルベドの推定・2．中央値フィルタの実装
+
                 //test();
                 //カラー画像のクラスタリング
                 //Kmeans_segmentation(colorImageBuffer, vertexData);

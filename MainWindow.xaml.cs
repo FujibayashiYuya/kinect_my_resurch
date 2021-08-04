@@ -126,7 +126,7 @@ namespace kinect_test
                 int colorIndex = colorY * colorFrameDescription.Width + colorX;
                 int colorImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
                 int colorBufferIndex = (int)(colorIndex * colorFrameDescription.BytesPerPixel);
-                if (depthFrameData[i] < 2000)
+                if (depthFrameData[i] < 1000)
                 {
                     colorImageBuffer[colorImageIndex + 0] = colorFrameData[colorBufferIndex + 0];//B
                     colorImageBuffer[colorImageIndex + 1] = colorFrameData[colorBufferIndex + 1];//G
@@ -216,21 +216,21 @@ namespace kinect_test
 
                 //test();
                 //カラー画像のクラスタリング
-                Kmeans_segmentation(colorImageBuffer, vertexData);
+                //Kmeans_segmentation(colorImageBuffer, vertexData);
                 //Km_hsi(hsi, normalData, colorImageBuffer);
             }
             colorFrame.Dispose();
             depthFrame.Dispose();
         }
 
-        private int[] MaskVbyC(byte[] colorImageBuffer , int[] vertexdata)
+        private int[] MaskVbyC(byte[] colorImageBuffer, int[] vertexdata)
         {
             int index = 0;
             for (int i = 0; i < depthFrameData.Length; i++)
             {
                 index = i * 3;
-                if (colorImageBuffer[index] == 0 && 
-                    colorImageBuffer[index + 1] == 0 && 
+                if (colorImageBuffer[index] == 0 &&
+                    colorImageBuffer[index + 1] == 0 &&
                     colorImageBuffer[index + 2] == 0)
                 {
                     vertexdata[index] = 0;
@@ -251,9 +251,9 @@ namespace kinect_test
                     colorImageBuffer[index + 1] == 0 &&
                     colorImageBuffer[index + 2] == 0)
                 {
-                    normaldata[i,0] = 0;
-                    normaldata[i,1] = 0;
-                    normaldata[i,2] = 0;
+                    normaldata[i, 0] = 0;
+                    normaldata[i, 1] = 0;
+                    normaldata[i, 2] = 0;
                 }
             }
             return normaldata;
@@ -631,7 +631,7 @@ namespace kinect_test
 
                         var criteria = new TermCriteria(type: CriteriaType.Eps | CriteriaType.MaxIter, maxCount: 10, epsilon: 1.0);
                         Cv2.Kmeans(src, CLASS, cluster, criteria, 3, KMeansFlags.PpCenters, centers);
-                        for (int g = 0; g < CLASS; g++) Debug.WriteLine(centers.At<Vec4f>(g));
+                        for (int g = 0; g < CLASS; g++) Debug.WriteLine(centers.At<Vec6f>(g));
                         i = 0;
                         byte gs = 255 / CLASS;
                         Mat output = new Mat(depthFrameDescription.Height, depthFrameDescription.Width, MatType.CV_8UC3);
@@ -701,13 +701,13 @@ namespace kinect_test
             }
         }
 
-        //Kmeans法によるクラスタリング（色＋頂点座標に改良予定）
+        //Kmeans法によるクラスタリング（拡散色＋頂点座標に改良予定）
         private void Km_colpos(int[] vertexdata, byte[] rscolor)
         {
             //とりあえず2つの物体で考える
-            const int CLASS = 3;
+            const int CLASS = 5;
             //色(もともとByte)＋頂点座標(int型)の6chのMat(★float型じゃないとダメ)
-            using (Mat src = new Mat(depthFrameDescription.Width * depthFrameDescription.Height, 1, MatType.CV_32FC(4)))
+            using (Mat src = new Mat(depthFrameDescription.Width * depthFrameDescription.Height, 1, MatType.CV_32FC(6)))
             {
                 using (Mat cluster = new Mat())
                 {
@@ -720,83 +720,47 @@ namespace kinect_test
                         {
                             for (int x = 0; x < depthFrameDescription.Width; x++, i++)
                             {
-                                index = y * depthFrameDescription.Width + x;
+                                index = i * colorFrameDescription.BytesPerPixel;
+
                                 
-                                    /*
-                                    Vec4f vec4f = new Vec4f
-                                    {
-                                        Item0 = (float)(hsi[i * colorFrameDescription.BytesPerPixel] * (180 / Math.PI)) + 90,//色相
-                                        Item1 = (float)(normaldata[index, 0] + 1) * 2,//法線
-                                        Item2 = (float)(normaldata[index, 1] + 1) * 2,
-                                        Item3 = (float)(normaldata[index, 2]) * 2
-                                    };
-                                    src.Set<Vec4f>(i, vec4f);
-                                    */
-                                
+                                Vec6f vec6f = new Vec6f
+                                {
+                                    Item0 = (float)(rscolor[index]),
+                                    Item1 = (float)(rscolor[index + 1]),
+                                    Item2 = (float)(rscolor[index + 2]),
+                                    Item3 = (float)(vertexdata[index]),
+                                    Item4 = (float)(vertexdata[index + 1]),
+                                    Item5 = (float)(vertexdata[index + 2])
+                                };
+                                src.Set<Vec6f>(i, vec6f);
                             }
                         }
 
                         var criteria = new TermCriteria(type: CriteriaType.Eps | CriteriaType.MaxIter, maxCount: 10, epsilon: 1.0);
                         Cv2.Kmeans(src, CLASS, cluster, criteria, 3, KMeansFlags.PpCenters, centers);
-                        for (int g = 0; g < CLASS; g++) Debug.WriteLine(centers.At<Vec4f>(g));
+                        for (int g = 0; g < CLASS; g++) Debug.WriteLine(centers.At<Vec6f>(g));
                         i = 0;
-                        byte gs = 255 / CLASS;
                         Mat output = new Mat(depthFrameDescription.Height, depthFrameDescription.Width, MatType.CV_8UC3);
-                        #region centercol
-                        /*
-                        //クラスごとのRGBを格納
-                        int[] sumcolor = new int[CLASS * 3];
-                        int[] classcount = new int[CLASS];
-                        for (int j = 0; j < depthFrameData.Length; i++)
-                        {
-                            int ind = cluster.Get<int>(i);
-                            classcount[ind] += 1;
-                            ind *= 3;
-                            sumcolor[ind] += colorbuffer[j++];//B
-                            sumcolor[ind + 1] += colorbuffer[j++];//G
-                            sumcolor[ind + 2] += colorbuffer[j++];//R
-                        }
-                        byte[] centercol = new byte[CLASS * 3];
-                        for (int k = 0; k < CLASS; k++)
-                        {
-                            int num = k * 3;
-                            centercol[num] = (byte)(sumcolor[num] / classcount[k]);
-                            centercol[num + 1] = (byte)(sumcolor[num + 1] / classcount[k]);
-                            centercol[num + 2] = (byte)(sumcolor[num + 2] / classcount[k]);
-                        }
-                        */
-                        i = 0;
                         for (int y = 0; y < depthFrameDescription.Height; y++)
                         {
                             for (int x = 0; x < depthFrameDescription.Width; x++, i++)
                             {
-                                //Vec3b col = new Vec3b();
-                                //0～7のクラスが割り当てられている
                                 int ind = cluster.Get<int>(i);
-                                //if (ind > 7 || ind < 0) Debug.WriteLine(ind + "sita");
-                                /*
-                                col[0] = centercol[ind];    //B
-                                col[1] = centercol[ind + 1];//G
-                                col[2] = centercol[ind + 2];//R
-                                */
 
                                 Vec3b col = new Vec3b();
-                                col[0] = (byte)(gs * ind);
-                                col[1] = (byte)(gs * ind);
-                                col[2] = (byte)(gs * ind);
 
-                                /*
                                 int firstComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[0]));
                                 firstComponent = firstComponent > 255 ? 255 : firstComponent < 0 ? 0 : firstComponent;
                                 col[0] = Convert.ToByte(firstComponent);
+
                                 int secondComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[1]));
                                 secondComponent = secondComponent > 255 ? 255 : secondComponent < 0 ? 0 : secondComponent;
                                 col[1] = Convert.ToByte(secondComponent);
+
                                 int thirdComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[2]));
                                 thirdComponent = thirdComponent > 255 ? 255 : thirdComponent < 0 ? 0 : thirdComponent;
                                 col[2] = Convert.ToByte(thirdComponent);
                                 //if (i < 20) Debug.WriteLine(col);
-                                */
                                 output.Set<Vec3b>(y, x, col);
                             }
                         }
@@ -808,11 +772,9 @@ namespace kinect_test
             }
         }
 
-            #endregion hsi_km
-
-            #region remove_specular
-            //RGB to Ispace
-            private double[] Ispace_fromRGB(byte[] colorbuffer, double[] ibuffer)
+        #region remove_specular
+        //RGB to Ispace
+        private double[] Ispace_fromRGB(byte[] colorbuffer, double[] ibuffer)
         {
             //RGB　⇒　Ix, Iy, Iz
             uint index = 0;
@@ -927,7 +889,7 @@ namespace kinect_test
                     b = iz - ix / 3 - iy / Math.Sqrt(3);
                     g = iz - ix / 3 + iy / Math.Sqrt(3);
                     r = iz + ix * 2 / 3;
-                    
+
                     Pixel_normaliz(rmc, b, g, r);
                     rm_color[index] = rmc[0];
                     rm_color[index + 1] = rmc[1];

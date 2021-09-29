@@ -9,12 +9,14 @@ using System.Numerics;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Runtime.InteropServices;
 
 //openTk用
 using OpenTK;
 using OpenTK.Graphics;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Input;
+//using PixelFormat = OpenTK.Graphics.OpenGL.PixelFormat;
 
 namespace kinect_test
 {
@@ -886,7 +888,6 @@ namespace kinect_test
             double[] y_sum = new double[irradiancemap.Length];
             double[] xy_sum = new double[irradiancemap.Length];
             double[] xx_sum = new double[irradiancemap.Length];
-
             //明度でrm_color - km_imgの値をnormalDataから法線情報を基に放射照度マップに格納する
             //rm_colorの画像座標に対してループ
             for (int i = 0; i < depthFrameDescription.LengthInPixels; i++)
@@ -898,11 +899,11 @@ namespace kinect_test
                     intens_rm = (double)(rm_color[rgbindex] + rm_color[rgbindex + 1] + rm_color[rgbindex + 2]) / 3; //y
                     intens_km = (double)(km_img[rgbindex] + km_img[rgbindex + 1] + km_img[rgbindex + 2]) / 3; //x
                     //法線方向からuv座標を求める
-                    u = (int)((normalData[i, 0] + 1) * map_w / 2);
-                    v = (int)((normalData[i, 1] + 1) * map_h / 2);
+                    u = (int)((normalData[i, 0] + 1) * (map_w - 1) / 2);
+                    v = (int)((normalData[i, 1] + 1) * (map_h - 1) / 2);
                     uvind = v * map_w + u;
                     //最小二乗法に用いる値を代入していく
-                    //エラー：インデックスの配列外です。
+                    //エラー：インデックスの配列外です。(上でuv座標をW-1にした。0から31行列の32*32の行列)
                     datanum[uvind] += 1;
                     x_sum[uvind] += intens_km;
                     y_sum[uvind] += intens_rm;
@@ -1403,10 +1404,146 @@ namespace kinect_test
     }
 
     //以下OpenTK
-    class Game : GameWindow
+    struct Vertex
     {
+        public OpenTK.Vector3 position;
+        public OpenTK.Vector3 normal;
+        public Color4 color;
+
+        public Vertex(OpenTK.Vector3 position, OpenTK.Vector3 normal, Color4 color)
+        {
+            this.position = position;
+            this.normal = normal;
+            this.color = color;
+        }
+
+        public static readonly int Size = Marshal.SizeOf(default(Vertex));
+    }
+
+    public class Game : GameWindow
+    {
+        #region Camera__Field
+
+        bool isCameraRotating;      //カメラが回転状態かどうか
+        OpenTK.Vector2 current, previous;  //現在の点、前の点
+        Matrix4 rotate;             //回転行列
+        float zoom;                 //拡大度
+        float wheelPrevious;        //マウスホイールの前の状態
+
+        #endregion
+
+        //OpenTK.Vector4 lightPosition;      //平行光源の方向
+        //Color4 lightAmbient;        //光源の環境光成分
+        //Color4 lightDiffuse;        //光源の拡散光成分
+        //Color4 lightSpecular;       //光源の鏡面光成分
+
+        Color4 materialAmbient;     //材質の環境光成分
+        //Color4 materialDiffuse;	//材質の拡散光成分
+        Color4 materialSpecular;    //材質の鏡面光成分
+        float materialShininess;	//材質の鏡面光の鋭さ
+
+        //vbo-球
+        Vertex[] vertices2;         //頂点
+        int[] indices2;             //頂点の指標（InitSphere内で頂点を指定している）
+        int vbo2;                   //VBOのバッファの識別番号を保持
+        int ibo2;                   //IBOのバッファの識別番号を保持
+        int vao2;					//VAOの識別番号を保持
+
+        int texture;                //背景画像
+
         public Game() : base(800, 600, GraphicsMode.Default, "GraphicsWindow")
         {
+            #region Camera__Initialize
+
+            isCameraRotating = false;
+            current = OpenTK.Vector2.Zero;
+            previous = OpenTK.Vector2.Zero;
+            rotate = Matrix4.Identity;
+            zoom = 1.0f;
+            wheelPrevious = 0.0f;
+            #endregion
+
+            #region Camera__Event
+
+            //マウスボタンが押されると発生するイベント
+            this.MouseDown += (sender, e) =>
+            {
+                var mouse = OpenTK.Input.Mouse.GetState();
+                //右ボタンが押された場合
+                if (e.Button == MouseButton.Right)
+                {
+                    //ok
+                    isCameraRotating = true;
+                    current = new OpenTK.Vector2(mouse.X, mouse.Y);
+                }
+            };
+
+            //マウスボタンが離されると発生するイベント
+            this.MouseUp += (sender, e) =>
+            {
+                //右ボタンが押された場合
+                if (e.Button == MouseButton.Right)
+                {
+                    isCameraRotating = false;
+                    previous = OpenTK.Vector2.Zero;
+                }
+            };
+
+            //マウスが動くと発生するイベント
+            this.MouseMove += (sender, e) =>
+            {
+                ////カメラが回転状態の場合
+                if (isCameraRotating)
+                {
+                    var mouse = OpenTK.Input.Mouse.GetState();
+                    previous = current;
+                    current = new OpenTK.Vector2(mouse.X, mouse.Y);
+                    OpenTK.Vector2 delta = current - previous;
+                    delta /= (float)Math.Sqrt(this.Width * this.Width + this.Height * this.Height);
+                    float length = delta.Length;
+                    if (length > 0.0)
+                    {
+                        float rad = length * MathHelper.Pi;
+                        /*
+                        float theta = (float)Math.Sin(rad) / length;
+                        */
+                        OpenTK.Vector3 after = new OpenTK.Vector3(
+                            delta.Y,
+                            delta.X,
+                            0.0f);
+                        Matrix4 diff = Matrix4.CreateFromAxisAngle(after, rad);
+                        Matrix4.Mult(ref rotate, ref diff, out rotate);
+                    }
+                }
+            };
+
+            //マウスホイールが回転すると発生するイベント
+            this.MouseWheel += (sender, e) =>
+            {
+                var mouse = OpenTK.Input.Mouse.GetState();
+                float delta = (float)mouse.Wheel - (float)wheelPrevious;
+                zoom *= (float)Math.Pow(1.06, delta);
+                //拡大、縮小の制限
+                if (zoom > 2.0f)
+                    zoom = 2.0f;
+                if (zoom < 0.5f)
+                    zoom = 0.5f;
+                wheelPrevious = mouse.Wheel;
+            };
+
+            #endregion
+
+            materialAmbient = new Color4(0.2f, 0.2f, 0.2f, 1.0f);
+            //materialDiffuse = new Color4(0.7f, 0.7f, 0.7f, 1.0f);
+            materialSpecular = new Color4(0.6f, 0.6f, 0.6f, 1.0f);
+            materialShininess = 80.0f;
+
+            vbo2 = 0;
+            ibo2 = 0;
+            vao2 = 0;
+
+            InitSphere(64, 32, 1.0f);//（縦の分割数⇒正面からは半分の面が見える,横の分割数,半径）
+
             VSync = VSyncMode.On;
         }
 
@@ -1418,6 +1555,115 @@ namespace kinect_test
             GL.ClearColor(Color4.Black);
             //Enable 使用可能にする（デプスバッファの使用）
             GL.Enable(EnableCap.DepthTest);
+            //テクスチャの許可
+            GL.Enable(EnableCap.Texture2D);
+
+            //裏面削除、反時計回りが表でカリング
+            GL.Enable(EnableCap.CullFace);　//カリングの許可
+            GL.CullFace(CullFaceMode.Back); //どちらの面を描画しないか
+            GL.FrontFace(FrontFaceDirection.Ccw); //表を時計回り(Cw)か反時計回り(Ccw)か
+
+            //ライティングON Light0を有効化
+            GL.Enable(EnableCap.Lighting);
+            GL.Enable(EnableCap.Light0); //Lightは最大8個まで
+
+            //各Arrayを有効化
+            GL.EnableClientState(ArrayCap.VertexArray);
+            GL.EnableClientState(ArrayCap.NormalArray);
+            GL.EnableClientState(ArrayCap.ColorArray);
+
+            //法線の正規化
+            GL.Enable(EnableCap.Normalize);
+
+            //色を材質に変換
+            GL.Enable(EnableCap.ColorMaterial);
+            GL.ColorMaterial(MaterialFace.Front, ColorMaterialParameter.Diffuse);
+
+            #region vbo
+            //VBOを1コ生成し、2の頂点データを送り込む
+            GL.GenBuffers(1, out vbo2);
+            //ArrayBufferとしてvbo2を指定（バインド）
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo2);
+            int vertexArray2Size = vertices2.Length * Vertex.Size;
+            //ArrayBufferにデータをセット
+            GL.BufferData<Vertex>(BufferTarget.ArrayBuffer, new IntPtr(vertexArray2Size), vertices2, BufferUsageHint.StaticDraw);
+            //バインド解除
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+            #endregion
+
+            #region ibo
+            GL.GenBuffers(1, out ibo2);
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ibo2);
+            int indexArray2Size = indices2.Length * sizeof(int);
+            GL.BufferData(BufferTarget.ElementArrayBuffer, new IntPtr(indexArray2Size), indices2, BufferUsageHint.StaticDraw);
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, 0);
+            #endregion
+
+            #region vao
+            //VAOを1コ作成
+            GL.GenVertexArrays(1, out vao2);
+            GL.BindVertexArray(vao2);
+            //各Arrayを有効化
+            GL.EnableClientState(ArrayCap.VertexArray);
+            GL.EnableClientState(ArrayCap.NormalArray);
+            GL.EnableClientState(ArrayCap.ColorArray);
+
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo2);
+            //頂点の位置情報の場所を指定
+            GL.VertexPointer(3, VertexPointerType.Float, Vertex.Size, 0);
+            //頂点の法線情報の場所を指定
+            GL.NormalPointer(NormalPointerType.Float, Vertex.Size, OpenTK.Vector3.SizeInBytes);
+            //頂点の色情報の場所を指定
+            GL.ColorPointer(4, ColorPointerType.Float, Vertex.Size, OpenTK.Vector3.SizeInBytes * 2);
+
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+
+            GL.BindVertexArray(0);
+            #endregion()
+
+            //テクスチャ用
+            //テクスチャ用のバッファを生成
+            texture = GL.GenTexture();
+            //紐づけ
+            GL.BindTexture(TextureTarget.Texture2D, texture);
+            //テクスチャの設定（拡大・縮小時にどうするか）
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+
+            //テクスチャの色情報を作成
+            int size = 8;
+            float[,,] colors = new float[size, size, 4];
+            for (int i = 0; i < colors.GetLength(0); i++)
+            {
+                for (int j = 0; j < colors.GetLength(1); j++)
+                {
+                    colors[i, j, 0] = (float)i / size;
+                    colors[i, j, 1] = (float)j / size;
+                    colors[i, j, 2] = 0.0f;
+                    colors[i, j, 3] = 1.0f;
+                }
+            }
+
+            //テクスチャ用バッファに色情報を流し込む
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, size, size, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.Float, colors);
+    }
+
+        //ウィンドウの終了時に実行される。
+        protected override void OnUnload(EventArgs e)
+        {
+            base.OnUnload(e);
+
+            GL.DeleteBuffers(1, ref vbo2);          //バッファを1コ削除
+
+            GL.DeleteBuffers(1, ref vbo2);          //バッファを1コ削除
+            GL.DeleteBuffers(1, ref ibo2);          //バッファを1コ削除
+            GL.DeleteVertexArrays(1, ref vao2);     //VAOを1コ削除
+
+            GL.DisableClientState(ArrayCap.VertexArray);    //VertexArrayを無効化
+            GL.DisableClientState(ArrayCap.NormalArray);    //NormalArrayを無効化
+            GL.DisableClientState(ArrayCap.ColorArray);		//ColorArrayを無効化
+
+            GL.DeleteTexture(texture);   //使用したテクスチャの削除
         }
 
         //ウィンドウサイズが変更された時に実行
@@ -1425,25 +1671,52 @@ namespace kinect_test
         {
             base.OnResize(e);
 
-            GL.Viewport(ClientRectangle.X, ClientRectangle.Y, ClientRectangle.Width, ClientRectangle.Height);
-            //Projection(投影)変換にする
-            GL.MatrixMode(MatrixMode.Projection);
-            //gluのgluPerspective関数で投影行列に適応される行列を生成
-            Matrix4 projection = Matrix4.CreatePerspectiveFieldOfView((float)Math.PI / 4, (float)Width / (float)Height, 1.0f, 64.0f);
-            GL.LoadMatrix(ref projection);
+            GL.Viewport(ClientRectangle);
         }
 
         //画面更新で実行される。
         protected override void OnUpdateFrame(FrameEventArgs e)
         {
             base.OnUpdateFrame(e);
-
-            KeyboardState keyboardState = Keyboard.GetState();
-            //Escapeキーで終了
-            if (keyboardState[Key.Space])
+            KeyboardState input = Keyboard.GetState();
+            if (input.IsKeyDown(Key.Escape))
             {
-                this.Exit();
+                Close();
             }
+
+            #region Camera__Keyboard
+
+            //F1キーで回転をリセット
+            if (input.IsKeyDown(Key.F1))
+            {
+                rotate = Matrix4.Identity;
+            }
+
+            //F2キーでY軸90度回転
+            if (input.IsKeyDown(Key.F2))
+            {
+                rotate = Matrix4.CreateRotationY(MathHelper.PiOver2);
+            }
+
+            //F3キーでY軸180度回転
+            if (input.IsKeyDown(Key.F3))
+            {
+                rotate = Matrix4.CreateRotationY(MathHelper.Pi);
+            }
+
+            //F4キーでY軸270度回転
+            if (input.IsKeyDown(Key.F4))
+            {
+                rotate = Matrix4.CreateRotationY(MathHelper.ThreePiOver2);
+            }
+
+            //F5キーで拡大をリセット
+            if (input.IsKeyDown(Key.F5))
+            {
+                zoom = 1.0f;
+            }
+
+            #endregion
         }
 
         //画面描画で実行される。
@@ -1453,24 +1726,138 @@ namespace kinect_test
 
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
+            #region TransFormationMatrix
+
+            Matrix4 modelView = Matrix4.LookAt(OpenTK.Vector3.UnitZ * 10 / zoom, OpenTK.Vector3.Zero, OpenTK.Vector3.UnitY);
             GL.MatrixMode(MatrixMode.Modelview);
-            Matrix4 modelview = Matrix4.LookAt(OpenTK.Vector3.Zero, OpenTK.Vector3.UnitZ, OpenTK.Vector3.UnitY);
-            GL.LoadMatrix(ref modelview);
+            GL.LoadMatrix(ref modelView);
+            GL.MultMatrix(ref rotate);
 
-            GL.Begin(BeginMode.Triangles);
+            Matrix4 projection = Matrix4.CreatePerspectiveFieldOfView(MathHelper.PiOver4 / zoom, (float)this.Width / (float)this.Height, 1.0f, 64.0f);
+            GL.MatrixMode(MatrixMode.Projection);
+            GL.LoadMatrix(ref projection);
 
-            GL.Color4(Color4.White);                            //色名で指定
-            GL.Vertex3(-1.0f, 1.0f, 4.0f);
-            GL.Color4(new float[] { 1.0f, 0.0f, 0.0f, 1.0f });  //配列で指定
-            GL.Vertex3(-1.0f, -1.0f, 4.0f);
-            GL.Color4(0.0f, 1.0f, 0.0f, 1.0f);                  //4つの引数にfloat型で指定
-            GL.Vertex3(1.0f, -1.0f, 4.0f);
-            //GL.Color4((byte)0, (byte)0, (byte)255, (byte)255);  //byte型で指定
-            //GL.Vertex3(1.0f, 1.0f, 4.0f);
+            #endregion
+
+            //材質のパラメータ設定（表裏、材質の要素、その情報）
+            GL.Material(MaterialFace.Front, MaterialParameter.Ambient, materialAmbient);
+            //GL.Material(MaterialFace.Front, MaterialParameter.Diffuse, materialDiffuse);
+            //GL.Material(MaterialFace.Front, MaterialParameter.Specular, materialSpecular);
+            GL.Material(MaterialFace.Front, MaterialParameter.Shininess, materialShininess);
+
+            GL.MatrixMode(MatrixMode.Modelview);
+
+            //球を描画
+            GL.BindVertexArray(vao2);
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ibo2);
+            GL.DrawElements(BeginMode.Quads, indices2.Length, DrawElementsType.UnsignedInt, 0);
+
+            GL.BindVertexArray(0);
+
+            //テクスチャ用のポリゴン表示
+            GL.Color4(Color4.White);
+            GL.Begin(BeginMode.Quads);
+
+            GL.TexCoord2(1.0, 1.0);
+            GL.Vertex3(4, 3, -1);
+
+            GL.TexCoord2(0.0, 1.0);
+            GL.Vertex3(-4, 3, -1);
+
+            GL.TexCoord2(0.0, 0.0);
+            GL.Vertex3(-4, -3, -1);
+
+            GL.TexCoord2(1.0, 0.0);
+            GL.Vertex3(4, -3, -1);
 
             GL.End();
 
             SwapBuffers();
+        }
+
+        //球で初期化
+        void InitSphere(int slice, int stack, float radius)
+        {
+            LinkedList<Vertex> vertexList = new LinkedList<Vertex>();
+            LinkedList<int> indexList = new LinkedList<int>();
+
+            for (int i = 0; i <= stack; i++)
+            {
+                double p = Math.PI / stack * i;
+                double pHeight = Math.Cos(p);
+                double pWidth = Math.Sin(p);
+
+                for (int j = 0; j <= slice; j++)
+                {
+                    double rotor = 2 * Math.PI / slice * j;
+                    double x = Math.Cos(rotor);
+                    double y = Math.Sin(rotor);
+
+                    OpenTK.Vector3 position = new OpenTK.Vector3((float)(radius * x * pWidth), (float)(radius * pHeight), (float)(radius * y * pWidth));
+                    OpenTK.Vector3 normal = new OpenTK.Vector3((float)(x * pWidth), (float)pHeight, (float)(y * pWidth));
+                    Color4 color = RGBAfromHSVA(360f * (float)j / (float)slice, 1.0f, 1.0f, 1.0f);
+                    vertexList.AddLast(new Vertex(position, normal, color));
+                }
+            }
+
+            for (int i = 0; i <= stack; i++)
+            {
+                for (int j = 0; j <= slice; j++)
+                {
+                    int d = i * (slice + 1) + j;
+                    indexList.AddLast(d);
+                    indexList.AddLast(d + 1);
+                    indexList.AddLast(d + slice + 2);
+                    indexList.AddLast(d + slice + 1);
+                }
+            }
+            vertices2 = vertexList.ToArray();
+            indices2 = indexList.ToArray();
+        }
+
+        static Color4 RGBAfromHSVA(float H, float S, float V, float A)
+        {
+            Color4 result = new Color4();
+            H %= 360;
+            int i = ((int)Math.Floor(H / 60));
+            float f = H / 60.0f - i;
+            float p = V * (1.0f - S);
+            float q = V * (1.0f - f * S);
+            float t = V * (1.0f - (1.0f - f) * S);
+            switch (i)
+            {
+                case 0:
+                    result.R = V;
+                    result.G = t;
+                    result.B = p;
+                    break;
+                case 1:
+                    result.R = q;
+                    result.G = V;
+                    result.B = p;
+                    break;
+                case 2:
+                    result.R = p;
+                    result.G = V;
+                    result.B = t;
+                    break;
+                case 3:
+                    result.R = p;
+                    result.G = q;
+                    result.B = V;
+                    break;
+                case 4:
+                    result.R = t;
+                    result.G = p;
+                    result.B = V;
+                    break;
+                case 5:
+                    result.R = V;
+                    result.G = p;
+                    result.B = q;
+                    break;
+            }
+            return result;
         }
     }
 }

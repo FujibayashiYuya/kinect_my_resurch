@@ -696,6 +696,7 @@ namespace kinect_test
                     g = iz - ix / 3 + iy / Math.Sqrt(3);
                     r = iz + ix * 2 / 3;
 
+                    //RGBの内最大値が255になるように正規化
                     Pixel_normaliz(rmc, b, g, r);
                     rm_color[index] = rmc[0];
                     rm_color[index + 1] = rmc[1];
@@ -888,7 +889,7 @@ namespace kinect_test
         //Kmeans法によるクラスタリング（拡散色＋頂点座標に改良予定）
         //問題点：範囲外の黒い部分も対象になっている
         //対策：マスクを用意する（mask[i] = 1の時だけKmeasnで計算、あとからmask[i] = 1の箇所に上から順に画素値を代入させる）
-        private byte[] Km_colpos(int[] vertexdata, byte[] rscolor, byte[] mask , byte[] km_img)
+        private byte[] Km_colpos(int[] vertexdata, byte[] rscolor, byte[] mask, byte[] km_img)
         {
             //とりあえず2つの物体で考える
             const int CLASS = 3;
@@ -942,7 +943,7 @@ namespace kinect_test
                             for (int x = 0; x < depthFrameDescription.Width; x++, i++)
                             {
                                 Vec3b col = new Vec3b();
-                                kmindex = (int)((y * depthFrameDescription.Width + x ) * colorFrameDescription.BytesPerPixel);
+                                kmindex = (int)((y * depthFrameDescription.Width + x) * colorFrameDescription.BytesPerPixel);
                                 //その座標のマスクの値が０の時RGBは０、マスクの値が1の時はクラスター中心の値を代入
                                 if (mask[i] == 0)
                                 {
@@ -1028,11 +1029,6 @@ namespace kinect_test
         //アルベドに対する拡散反射成分の明度の最小二乗法で行う
         private double[,] MakeIrradiancemapBySaisyounijou(byte[] rm_color, byte[] km_img, double[,] normalData, byte[] mask)
         {
-            //マップの幅
-            //int map_w = 32;
-            //int map_h = 32;
-            //放射照度マップ
-            //double[,] irradiancemap = new double[map_w * map_h, 2];//傾きとy切片を格納
             double a = 0, b = 0;
             int rgbindex = 0;
             //マップの座標
@@ -1053,8 +1049,8 @@ namespace kinect_test
                 {
                     rgbindex = (int)(i * colorFrameDescription.BytesPerPixel);
                     //明度を求める(OpenTK用に0～１に正規化)
-                    intens_rm = (double)(rm_color[rgbindex] + rm_color[rgbindex + 1] + rm_color[rgbindex + 2]) / 3 / 255; //y
-                    intens_km = (double)(km_img[rgbindex] + km_img[rgbindex + 1] + km_img[rgbindex + 2]) / 3 / 255; //x
+                    intens_rm = (double)(rm_color[rgbindex] + rm_color[rgbindex + 1] + rm_color[rgbindex + 2]) / 3; /// 255; //y
+                    intens_km = (double)(km_img[rgbindex] + km_img[rgbindex + 1] + km_img[rgbindex + 2]) / 3;// / 255; //x
                     //法線方向からuv座標を求める
                     u = (int)((normalData[i, 0] + 1) * (map_w - 1) / 2);
                     v = (int)((normalData[i, 1] + 1) * (map_h - 1) / 2);
@@ -1077,16 +1073,21 @@ namespace kinect_test
                 {
                     a = (datanum[j] * xy_sum[j] - x_sum[j] * y_sum[j]) / (datanum[j] * xx_sum[j] - x_sum[j] * x_sum[j]);
                     b = (xx_sum[j] * y_sum[j] - x_sum[j] * xy_sum[j]) / (datanum[j] * xx_sum[j] - x_sum[j] * x_sum[j]);
+                    if(Double.IsNaN(a) || Double.IsInfinity(a))
+                    {
+                        a = 0;
+                        b = 0;
+                    }
                     irradiancemap[j, 0] = a;
-                    irradiancemap[j, 1] = b;
+                    irradiancemap[j, 1] = b/255;
                 }
             }
-            /*
+            
             for (int i = 0; i < 32 * 32; i++)
             {
                 Debug.WriteLine(irradiancemap[i,0] + " , " + irradiancemap[i, 1]);
             }
-            */
+            
             //値の無い箇所は補間（後回し）
             irradiancemap = Interpolation(irradiancemap);
 
@@ -1096,29 +1097,29 @@ namespace kinect_test
         //補間関数
         public double[,] Interpolation(double[,] irradiancemap)
         {
-            for(int v = 0; v < map_h; v++)
+            for (int v = 0; v < map_h; v++)
             {
                 //横方向で補間する
-                for(int u = 0; u < map_w; u++)
+                for (int u = 0; u < map_w; u++)
                 {
                     int index = v * map_w + u;
                     //もし値に挟まれている箇所があれば（内挿の補間）(行が同じとき)
-                    if(irradiancemap[index,0] != 0 && (index + 1)/map_w == v)
+                    if (irradiancemap[index, 0] != 0 && (index + 1) / map_w == v)
                     {
-                        for(int n = 1; n < map_w - u; n++)
+                        for (int n = 1; n < map_w - u; n++)
                         {
                             //補間値
                             float rate = 0;
                             float x = 0;
                             //index～index+nの間の値は0
-                            if(irradiancemap[index + n, 0] != 0)
+                            if (irradiancemap[index + n, 0] != 0)
                             {
                                 Debug.WriteLine("test");
                                 //傾きの補間
                                 //補間関数：y = 2x^3 - 3x^2 + 1
-                                if (irradiancemap[index,0] > irradiancemap[index + n, 0])
+                                if (irradiancemap[index, 0] > irradiancemap[index + n, 0])
                                 {
-                                    for(int m = 1; m < n; m++)
+                                    for (int m = 1; m < n; m++)
                                     {
                                         x = m / n;
                                         rate = 2 * x * x * x - 3 * x * x + 1;
@@ -1756,7 +1757,7 @@ namespace kinect_test
 
             //テクスチャ用バッファに色情報を流し込む
             GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, size, size, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.Float, colors);
-    }
+        }
 
         //ウィンドウの終了時に実行される。
         protected override void OnUnload(EventArgs e)
@@ -1888,7 +1889,7 @@ namespace kinect_test
         //球で初期化
         void InitSphere(int slice, int stack, float radius)
         {
-            for(int i = 0; i < 32 * 32; i++)
+            for (int i = 0; i < 32 * 32; i++)
             {
                 //値が参照出来ていない  1011 これでOK
                 Debug.WriteLine(MainWindow.irradiancemap[i, 0] + " , " + MainWindow.irradiancemap[i, 1]);

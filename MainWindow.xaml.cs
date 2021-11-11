@@ -55,19 +55,10 @@ namespace kinect_test
         bool click;
 
         //マップの幅
-        public static int map_w = 32;
-        public static int map_h = 32;
+        public static int map_w = 128;
+        public static int map_h = 128;
         //放射照度マップ
-        public static double[,] irradiancemap = new double[32 * 32, 2];//傾きとy切片を格納
-
-
-        //流れ
-        //カラー画像・深度画像の取得
-        //カラー画像深度画像の平滑化（平滑化してから法線を求める）
-        //深度画像を法線情報に変換
-        //法線情報とカラー情報をまとめる
-        //Kmeans法でカラー情報の分離
-        //最小二乗法で法線方向の照度を求める
+        public static double[,] irradiancemap = new double[128*128, 2];//傾きとy切片を格納
 
         public MainWindow()
         {
@@ -95,7 +86,7 @@ namespace kinect_test
             }
             catch
             {
-                MessageBox.Show("Kinectの検出できやせん");
+                MessageBox.Show("Kinectの検出できません");
             }
         }
 
@@ -233,12 +224,6 @@ namespace kinect_test
 
                 //Sfimage_miyazaki(ibuffer, rm_color);//宮崎先生の手法
 
-                /*夏やること
-                 * 1．拡散反射成分と頂点画像からアルベドの推定
-                 *    ▶デプスの閾値を決める（近いところは信頼度が高い）
-                 *    その範囲内でクラスタリングを行う（計算範囲減）
-                 * 2．中央値フィルタの実装*/
-
                 //test();
                 //カラー画像のクラスタリング(課題：km_imgにあった戻り値にする)
                 //Kmeans_segmentation(colorImageBuffer, vertexData, km_img);
@@ -260,7 +245,7 @@ namespace kinect_test
             int index = 0;
             for (int i = 0; i < depthFrameData.Length; i++)
             {
-                index = i * 3;
+                index = (int)(i * colorFrameDescription.BytesPerPixel);
                 if (colorImageBuffer[index] == 0 &&
                     colorImageBuffer[index + 1] == 0 &&
                     colorImageBuffer[index + 2] == 0)
@@ -278,7 +263,7 @@ namespace kinect_test
             int index = 0;
             for (int i = 0; i < depthFrameData.Length; i++)
             {
-                index = i * 3;
+                index = (int)(i * colorFrameDescription.BytesPerPixel);
                 if (colorImageBuffer[index] == 0 &&
                     colorImageBuffer[index + 1] == 0 &&
                     colorImageBuffer[index + 2] == 0)
@@ -288,6 +273,25 @@ namespace kinect_test
                     normaldata[i, 2] = 0;
                 }
             }
+
+            //法線取得状況を確認
+            //画像に出力
+            var normalImage = new byte[depthFrameDescription.LengthInPixels * colorFrameDescription.BytesPerPixel];
+            for (int i = 0; i < depthFrameData.Length; ++i)
+            {
+                int normalImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
+                //頂点座標
+                normalImage[normalImageIndex + 2] = (byte)((normaldata[i, 0] + 1) * 127.5);//x R
+                normalImage[normalImageIndex + 1] = (byte)((normaldata[i, 1] + 1) * 127.5);//y G
+                normalImage[normalImageIndex + 0] = (byte)(normaldata[i, 2] * 255);//z B
+            }
+            //頂点マップの表示
+            BitmapSource vertexMap = BitmapSource.Create(this.depthFrameDescription.Width,
+                this.depthFrameDescription.Height,
+                96, 96, PixelFormats.Bgr32, null, normalImage, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+            Mat src = BitmapSourceConverter.ToMat(vertexMap);
+            Cv2.ImShow("normal2", src);
+
             return normaldata;
         }
 
@@ -330,8 +334,8 @@ namespace kinect_test
                 var v = depthFrameDescription.Height * 0.5 - im_y;
 
                 //正規化用の座標最大値・最小値
-                var range_x = depthFrameDescription.Width / calibrationData.FocalLengthX * 4500;
-                var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
+                //var range_x = depthFrameDescription.Width / calibrationData.FocalLengthX * 4500;
+                //var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
 
                 //頂点座標
                 vertexData[colorImageIndex++] = (int)((u - calibrationData.PrincipalPointX) / calibrationData.FocalLengthX * DepthData[i]);//x
@@ -349,9 +353,9 @@ namespace kinect_test
                 var range_y = depthFrameDescription.Height / calibrationData.FocalLengthY * 4500;
 
                 //頂点座標
-                vertexImage[colorImageIndex] = (byte)(vertexData[colorImageIndex] / range_x * 255);//x
-                vertexImage[colorImageIndex + 1] = (byte)(vertexData[colorImageIndex + 1] / range_y * 255);//y
-                vertexImage[colorImageIndex + 2] = (byte)(255 * (vertexData[colorImageIndex + 2] - 500) / 7500);//z
+                vertexImage[colorImageIndex] = (byte)(vertexData[colorImageIndex] / range_x * 255);//x B
+                vertexImage[colorImageIndex + 1] = (byte)(vertexData[colorImageIndex + 1] / range_y * 255);//y G
+                vertexImage[colorImageIndex + 2] = (byte)(255 * (vertexData[colorImageIndex + 2] - 500) / 7500);//z R
             }
             //頂点マップの表示
             BitmapSource vertexMap = BitmapSource.Create(this.depthFrameDescription.Width,
@@ -387,21 +391,21 @@ namespace kinect_test
                 //y方向の傾きベクトル
                 py0 = (pIndex - y_dis < 0 ? 0 : pIndex - y_dis);
                 py1 = (pIndex + y_dis > VertexData.Length - 1 ? 0 : pIndex + y_dis);
-                vy[0] = (VertexData[py1] - VertexData[py0]) * 0.5;
-                vy[1] = (VertexData[++py1] - VertexData[++py0]) * 0.5;
-                vy[2] = (VertexData[++py1] - VertexData[++py0]) * 0.5;
+                vy[0] = (VertexData[py0] - VertexData[py1]) * 0.5;
+                vy[1] = (VertexData[++py0] - VertexData[++py1]) * 0.5;
+                vy[2] = (VertexData[++py0] - VertexData[++py1]) * 0.5;
                 //↑でおかしい？
                 if (vx[0] != 0 || vx[1] != 0 || vx[2] != 0)//まとめるとNoNがでてきた
                 {
                     if (vy[0] != 0 || vy[1] != 0 || vy[2] != 0)
                     {
-                        n = VecNormalized(VecCross(vx, vy));
+                        n = VecNormalized(VecCross(vx, vy));//カメラ方向が＋Zになるように
                     }
                 }
                 normalData[i, 0] = n[0];
                 normalData[i, 1] = n[1];
                 normalData[i, 2] = n[2];
-                //Debug.WriteLine(n[0] + n[1] + n[2] + " " + vx[0] + vx[1] + vx[2] + " " + vy[0]+vy[1]+vy[2]);
+                //Debug.WriteLine(n[0] + " " + n[1] + " " + n[2]);// + " " + vx[0] + vx[1] + vx[2] + " " + vy[0]+vy[1]+vy[2]);
             }
 
             //画像に出力
@@ -410,9 +414,9 @@ namespace kinect_test
             {
                 int normalImageIndex = (int)(i * colorFrameDescription.BytesPerPixel);
                 //頂点座標
-                normalImage[normalImageIndex + 0] = (byte)((normalData[i, 0] + 1) * 127.5);//x
-                normalImage[normalImageIndex + 1] = (byte)((normalData[i, 1] + 1) * 127.5);//y
-                normalImage[normalImageIndex + 2] = (byte)(normalData[i, 2] * 255);//z
+                normalImage[normalImageIndex + 2] = (byte)((normalData[i, 0] + 1) * 127.5);//x R
+                normalImage[normalImageIndex + 1] = (byte)((normalData[i, 1] + 1) * 127.5);//y G
+                normalImage[normalImageIndex + 0] = (byte)(normalData[i, 2] * 255);//z B
             }
             //頂点マップの表示
             BitmapSource vertexMap = BitmapSource.Create(this.depthFrameDescription.Width,
@@ -892,7 +896,7 @@ namespace kinect_test
         private byte[] Km_colpos(int[] vertexdata, byte[] rscolor, byte[] mask, byte[] km_img)
         {
             //とりあえず2つの物体で考える
-            const int CLASS = 3;
+            const int CLASS = 2;
             int srcbuffercount = 0;
             for (int m = 0; m < mask.Length; m++)
             {
@@ -1049,11 +1053,11 @@ namespace kinect_test
                 {
                     rgbindex = (int)(i * colorFrameDescription.BytesPerPixel);
                     //明度を求める(OpenTK用に0～１に正規化)
-                    intens_rm = (double)(rm_color[rgbindex] + rm_color[rgbindex + 1] + rm_color[rgbindex + 2]) / 3; /// 255; //y
-                    intens_km = (double)(km_img[rgbindex] + km_img[rgbindex + 1] + km_img[rgbindex + 2]) / 3;// / 255; //x
-                    //法線方向からuv座標を求める
+                    intens_rm = (double)(rm_color[rgbindex] + rm_color[rgbindex + 1] + rm_color[rgbindex + 2]) / 3 / 255; //y
+                    intens_km = (double)(km_img[rgbindex] + km_img[rgbindex + 1] + km_img[rgbindex + 2]) / 3 / 255; //x
+                    //法線方向からuv座標を求める(11月11日訂正　vの式 n -1 から　1- n)
                     u = (int)((normalData[i, 0] + 1) * (map_w - 1) / 2);
-                    v = (int)((normalData[i, 1] + 1) * (map_h - 1) / 2);
+                    v = (int)((1 - normalData[i, 1]) * (map_h - 1) / 2);
                     uvind = v * map_w + u;
                     //最小二乗法に用いる値を代入していく
                     //エラー：インデックスの配列外です。(上でuv座標をW-1にした。0から31行列の32*32の行列)
@@ -1079,15 +1083,15 @@ namespace kinect_test
                         b = 0;
                     }
                     irradiancemap[j, 0] = a;
-                    irradiancemap[j, 1] = b/255;
+                    irradiancemap[j, 1] = b;
                 }
             }
-            
+            /*
             for (int i = 0; i < 32 * 32; i++)
             {
                 Debug.WriteLine(irradiancemap[i,0] + " , " + irradiancemap[i, 1]);
             }
-            
+            */
             //値の無い箇所は補間（後回し）
             irradiancemap = Interpolation(irradiancemap);
 
@@ -1097,9 +1101,9 @@ namespace kinect_test
         //補間関数
         public double[,] Interpolation(double[,] irradiancemap)
         {
+            //横方向で補間する(一番外側は内挿補間できない)
             for (int v = 0; v < map_h; v++)
             {
-                //横方向で補間する
                 for (int u = 0; u < map_w; u++)
                 {
                     int index = v * map_w + u;
@@ -1114,7 +1118,7 @@ namespace kinect_test
                             //index～index+nの間の値は0
                             if (irradiancemap[index + n, 0] != 0)
                             {
-                                Debug.WriteLine("test");
+                                //Debug.WriteLine("test");
                                 //傾きの補間
                                 //補間関数：y = 2x^3 - 3x^2 + 1
                                 if (irradiancemap[index, 0] > irradiancemap[index + n, 0])
@@ -1889,11 +1893,13 @@ namespace kinect_test
         //球で初期化
         void InitSphere(int slice, int stack, float radius)
         {
+            /*
             for (int i = 0; i < 32 * 32; i++)
             {
                 //値が参照出来ていない  1011 これでOK
                 Debug.WriteLine(MainWindow.irradiancemap[i, 0] + " , " + MainWindow.irradiancemap[i, 1]);
             }
+            */
 
             LinkedList<Vertex> vertexList = new LinkedList<Vertex>();
             LinkedList<int> indexList = new LinkedList<int>();

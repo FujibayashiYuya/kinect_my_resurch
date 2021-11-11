@@ -1077,11 +1077,13 @@ namespace kinect_test
                 {
                     a = (datanum[j] * xy_sum[j] - x_sum[j] * y_sum[j]) / (datanum[j] * xx_sum[j] - x_sum[j] * x_sum[j]);
                     b = (xx_sum[j] * y_sum[j] - x_sum[j] * xy_sum[j]) / (datanum[j] * xx_sum[j] - x_sum[j] * x_sum[j]);
+                    /*
                     if(Double.IsNaN(a) || Double.IsInfinity(a))
                     {
                         a = 0;
                         b = 0;
                     }
+                    */
                     irradiancemap[j, 0] = a;
                     irradiancemap[j, 1] = b;
                 }
@@ -1095,13 +1097,48 @@ namespace kinect_test
             //値の無い箇所は補間（後回し）
             irradiancemap = Interpolation(irradiancemap);
 
+            byte[] irmap = new byte[irradiancemap.Length * colorFrameDescription.BytesPerPixel];
+            for (int j = 0; j < datanum.Length; j++)
+            {
+                int index = (int)(j * colorFrameDescription.BytesPerPixel);
+                if (irradiancemap[j, 0] == 0 && irradiancemap[j, 1] == 0)
+                {
+                    irmap[index] = 0;
+                    irmap[index + 1] = 0;
+                    irmap[index + 2] = 0;
+                }
+                else
+                {
+                    int color = (int)(255 * irradiancemap[j, 0] + irradiancemap[j, 1] * 255);
+                    //とりあえず計算されているところは色表示
+                    if (color < 255 || color < 0)
+                    {
+                        irmap[index] = 255;
+                        irmap[index + 1] = 255;
+                        irmap[index + 2] = 255;
+                    }
+                    else
+                    {
+                        irmap[index] = (byte)color;
+                        irmap[index + 1] = (byte)color;
+                        irmap[index + 2] = (byte)color;
+                    }
+                }
+            }
+            BitmapSource iramap = BitmapSource.Create(map_w,
+                            map_h,
+                            96, 96, PixelFormats.Bgr32, null, irmap, map_w * (int)this.colorFrameDescription.BytesPerPixel);
+            Mat testmap = BitmapSourceConverter.ToMat(iramap);
+            Cv2.ImShow("放射照度マップ", testmap);
+
+
             return irradiancemap;
         }
 
         //補間関数
         public double[,] Interpolation(double[,] irradiancemap)
         {
-            //横方向で補間する(一番外側は内挿補間できない)
+            //横方向で補間（とりあえず）(一番外側は内挿補間できない)
             for (int v = 0; v < map_h; v++)
             {
                 for (int u = 0; u < map_w; u++)
@@ -1919,8 +1956,14 @@ namespace kinect_test
                     OpenTK.Vector3 position = new OpenTK.Vector3((float)(radius * x * pWidth), (float)(radius * pHeight), (float)(radius * y * pWidth));
                     OpenTK.Vector3 normal = new OpenTK.Vector3((float)(x * pWidth), (float)pHeight, (float)(y * pWidth));
                     int map_u = (int)((x * pWidth + 1) * (MainWindow.map_w - 1) / 2);
-                    int map_v = (int)((pHeight + 1) * (MainWindow.map_h - 1) / 2);
-                    float brightness = (float)(1.0f * MainWindow.irradiancemap[map_v * MainWindow.map_w + map_u, 0] + MainWindow.irradiancemap[map_v * MainWindow.map_w + map_u, 1]);
+                    int map_v = (int)((1 - pHeight) * (MainWindow.map_h - 1) / 2);
+                    //test
+                    float brightness = 0;
+                    if (MainWindow.irradiancemap[map_v * MainWindow.map_w + map_u, 0] != 0)
+                    {
+                        brightness = 1.0f;
+                    }
+                    //float brightness = (float)(1.0f * MainWindow.irradiancemap[map_v * MainWindow.map_w + map_u, 0] + MainWindow.irradiancemap[map_v * MainWindow.map_w + map_u, 1]);
                     Color4 color = RGBAfromHSVA(0.0f, 0.0f, brightness, 1.0f);
                     vertexList.AddLast(new Vertex(position, normal, color));
                 }

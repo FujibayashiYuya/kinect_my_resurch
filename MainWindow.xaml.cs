@@ -1707,8 +1707,9 @@ namespace kinect_test
             GL.ClearColor(Color4.Black);
             //Enable 使用可能にする（デプスバッファの使用）
             GL.Enable(EnableCap.DepthTest);
-            //テクスチャの許可
-            //GL.Enable(EnableCap.Texture2D);
+            //テクスチャの許可(2D・3D)
+            GL.Enable(EnableCap.Texture2D);
+            GL.Enable(EnableCap.Texture3DExt);
 
             //裏面削除、反時計回りが表でカリング
             GL.Enable(EnableCap.CullFace);　//カリングの許可
@@ -1773,31 +1774,57 @@ namespace kinect_test
             GL.BindVertexArray(0);
             #endregion()
 
-            //テクスチャ用
+            //テクスチャ用===================================
+            #region texture
+            //アルファブレンドを許可
+            /*
+            GL.Enable(EnableCap.Blend);
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            */
             //テクスチャ用のバッファを生成
             texture = GL.GenTexture();
             //紐づけ
-            GL.BindTexture(TextureTarget.Texture2D, texture);
-            //テクスチャの設定（拡大・縮小時にどうするか）
+            //GL.BindTexture(TextureTarget.Texture2D, texture);
+            GL.BindTexture(TextureTarget.Texture3D, texture);
+
+            /*//テクスチャの設定（境界色の設定・軸からはみ出た部分の設定➡S軸・T軸）
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureBorderColor, new[] { 0.0f, 0.0f, 0.0f, 1.0f });
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.MirroredRepeat);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.MirroredRepeat);
+            //拡大・縮小時にどうするか(Linear 付近のピクセルから線形補間)
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
-
-            //テクスチャの色情報を作成
-            int size = 8;
-            float[,,] colors = new float[size, size, 4];
-            for (int i = 0; i < colors.GetLength(0); i++)
+            */
+            //テクスチャの設定(3D)（境界色の設定・軸からはみ出た部分の設定➡S軸・T軸）
+            GL.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureBorderColor, new[] { 0.0f, 0.0f, 0.0f, 1.0f });
+            GL.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.MirroredRepeat);
+            GL.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.MirroredRepeat);
+            //拡大・縮小時にどうするか(Linear 付近のピクセルから線形補間)
+            GL.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+            //テクスチャの色情報を作成============================
+            int size = 10;
+            float[,] colors = new float[size * size * size, 4];
+            for (int i = 0; i < size; i++)
             {
-                for (int j = 0; j < colors.GetLength(1); j++)
+                for (int j = 0; j < size ; j++)
                 {
-                    colors[i, j, 0] = (float)i / size;
-                    colors[i, j, 1] = (float)j / size;
-                    colors[i, j, 2] = 0.0f;
-                    colors[i, j, 3] = 1.0f;
+                    for (int k = 0; k < size; k++)
+                    {
+                        int index = size * size * i + size * j + k;
+                        colors[index, 0] = (float)i / size;//手前＋
+                        colors[index, 1] = (float)j / size;//上＋
+                        colors[index, 2] = (float)k / size;//右＋
+                        colors[index, 3] = 1.0f;
+                    }
                 }
             }
 
-            //テクスチャ用バッファに色情報を流し込む
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, size, size, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.Float, colors);
+            //テクスチャ用バッファに色情報を流し込む(テクスチャの対象,ミップマップのレベル,色の格納法,テクスチャ幅,テクスチャ高さ,奥行き,枠線の幅,画像の色の順番,画像の色のデータ型,色情報源)
+            //GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, size, size, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.Float, colors);
+            GL.TexImage3D(TextureTarget.Texture3D, 0, PixelInternalFormat.Rgba, size, size, size, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.Float, colors);
+            #endregion
+
         }
 
         //ウィンドウの終了時に実行される。
@@ -1900,30 +1927,76 @@ namespace kinect_test
             GL.MatrixMode(MatrixMode.Modelview);
 
             //球を描画
+            /*
             GL.BindVertexArray(vao2);
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ibo2);
             GL.DrawElements(BeginMode.Quads, indices2.Length, DrawElementsType.UnsignedInt, 0);
 
             GL.BindVertexArray(0);
+            */
 
-            //テクスチャ用のポリゴン表示
-            GL.Color4(Color4.Blue);
-            GL.Begin(BeginMode.Quads);
+            //メインのポリゴン表示
+            GL.Color4(Color4.White);
+            GL.Begin(BeginMode.Triangles);
 
-            GL.TexCoord2(1.0, 1.0);
-            GL.Vertex3(4, 3, -1);
+            GL.TexCoord3(1, 0, 0);
+            GL.Vertex3(1, -1, -1);
+            GL.TexCoord3(0, 1, 0);
+            GL.Vertex3(-1, 1, -1);
+            GL.TexCoord3(0, 0, 1);
+            GL.Vertex3(-1, -1, 1);
 
-            GL.TexCoord2(0.0, 1.0);
-            GL.Vertex3(-4, 3, -1);
+            GL.TexCoord3(1, 0, 0);
+            GL.Vertex3(1, -1, -1);
+            GL.TexCoord3(0, 1, 0);
+            GL.Vertex3(-1, 1, -1);
+            GL.TexCoord3(0, 0, 0);
+            GL.Vertex3(-1, -1, -1);
 
-            GL.TexCoord2(0.0, 0.0);
-            GL.Vertex3(-4, -3, -1);
+            GL.TexCoord3(1, 0, 0);
+            GL.Vertex3(1, -1, -1);
+            GL.TexCoord3(0, 0, 0);
+            GL.Vertex3(-1, -1, -1);
+            GL.TexCoord3(0, 0, 1);
+            GL.Vertex3(-1, -1, 1);
 
-            GL.TexCoord2(1.0, 0.0);
-            GL.Vertex3(4, -3, -1);
+            GL.TexCoord3(0, 0, 0);
+            GL.Vertex3(-1, -1, -1);
+            GL.TexCoord3(0, 1, 0);
+            GL.Vertex3(-1, 1, -1);
+            GL.TexCoord3(0, 0, 1);
+            GL.Vertex3(-1, -1, 1);
+
+
+            GL.TexCoord3(0, 1, 1);
+            GL.Vertex3(-1, 1, 1);
+            GL.TexCoord3(1, 0, 1);
+            GL.Vertex3(1, -1, 1);
+            GL.TexCoord3(1, 1, 0);
+            GL.Vertex3(1, 1, -1);
+
+            GL.TexCoord3(0, 1, 1);
+            GL.Vertex3(-1, 1, 1);
+            GL.TexCoord3(1, 0, 1);
+            GL.Vertex3(1, -1, 1);
+            GL.TexCoord3(1, 1, 1);
+            GL.Vertex3(1, 1, 1);
+
+            GL.TexCoord3(0, 1, 1);
+            GL.Vertex3(-1, 1, 1);
+            GL.TexCoord3(1, 1, 1);
+            GL.Vertex3(1, 1, 1);
+            GL.TexCoord3(1, 1, 0);
+            GL.Vertex3(1, 1, -1);
+
+            GL.TexCoord3(1, 1, 1);
+            GL.Vertex3(1, 1, 1);
+            GL.TexCoord3(1, 0, 1);
+            GL.Vertex3(1, -1, 1);
+            GL.TexCoord3(1, 1, 0);
+            GL.Vertex3(1, 1, -1);
 
             GL.End();
-
             SwapBuffers();
         }
 

@@ -39,3 +39,9 @@ C:\Users\k29ki\source\repos\kinect_test\kinect_test\bin\x86\Release\dll\x64\Open
 C:\Users\k29ki\source\repos\kinect_test\kinect_test\bin\x86\Release\dll\x64\opencv_videoio_ffmpeg450_64.dll
 C:\Users\k29ki\source\repos\kinect_test\kinect_test\bin\x86\Release\OpenCvSharpExtern.dll
 C:\Users\k29ki\source\repos\kinect_test\kinect_test\obj\x86\Release\kinect_test_Content.g.cs
+C:\Users\k29ki\source\repos\kinect_test\kinect_test\bin\x86\Release\OpenTK.dll
+C:\Users\k29ki\source\repos\kinect_test\kinect_test\bin\x86\Release\OpenTK.GLControl.dll
+C:\Users\k29ki\source\repos\kinect_test\kinect_test\bin\x86\Release\OpenTK.pdb
+C:\Users\k29ki\source\repos\kinect_test\kinect_test\bin\x86\Release\OpenTK.xml
+C:\Users\k29ki\source\repos\kinect_test\kinect_test\bin\x86\Release\OpenTK.GLControl.pdb
+C:\Users\k29ki\source\repos\kinect_test\kinect_test\bin\x86\Release\OpenTK.GLControl.xml

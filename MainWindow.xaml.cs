@@ -1612,6 +1612,8 @@ namespace kinect_test
         int vertexShader;
         int fragmentShader;
         int shaderProgram;
+
+        int mapLoc;
         #endregion
 
         public Game() : base(800, 600, GraphicsMode.Default, "GraphicsWindow")
@@ -1858,6 +1860,7 @@ namespace kinect_test
             {
                 throw new ApplicationException(GL.GetProgramInfoLog(shaderProgram));
             }
+            mapLoc = GL.GetUniformLocation(shaderProgram, "irradiance");
             //シェーダプログラムを使用
             GL.UseProgram(shaderProgram);
             #endregion
@@ -1910,7 +1913,7 @@ namespace kinect_test
                 GL.Disable(EnableCap.DepthTest); //z座標が同じものをBlendするにはDepthTestを切る
 
                 //(128, 256, 0)
-                MakeMap(128f, 256f, 0.0f);
+                MakeMap(128f, 25f, 0.0f);
                               
                 GL.Disable(EnableCap.Blend);
                 GL.Enable(EnableCap.DepthTest);
@@ -2199,10 +2202,14 @@ namespace kinect_test
             GL.Color4(0.0f, 1.0f, 0.1f, 1.0f);
             GL.Vertex3(128.0f, 0.0f, depth);
             GL.End();
+            float[] elem = new float[2];
             for (int i = 0; i < MainWindow.irradiancemap.GetLength(0); i++)
             {
                 if (MainWindow.irradiancemap[i, 0] != 0 && MainWindow.irradiancemap[i, 1] != 0)
                 {
+                    elem[0] = (float)MainWindow.irradiancemap[i, 0];
+                    elem[1] = (float)MainWindow.irradiancemap[i, 1];
+                    GL.Uniform2(mapLoc, 1, elem);
                     //座標は０スタート
                     mu = i % MainWindow.map_w;
                     mv = i / MainWindow.map_w;

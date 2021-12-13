@@ -2,6 +2,7 @@ using Microsoft.Kinect;
 using OpenCvSharp;
 using OpenCvSharp.WpfExtensions;
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -57,10 +58,10 @@ namespace kinect_test
         bool click;
 
         //マップの幅
-        public static int map_w = 128;
-        public static int map_h = 128;
+        public static int map_w = 256;
+        public static int map_h = 256;
         //放射照度マップ
-        public static double[,] irradiancemap = new double[128 * 128, 2];//傾きとy切片を格納
+        public static double[,] irradiancemap = new double[256 * 256, 2];//傾きとy切片を格納
 
         public MainWindow()
         {
@@ -1588,11 +1589,6 @@ namespace kinect_test
 
         #endregion
 
-        //OpenTK.Vector4 lightPosition;      //平行光源の方向
-        //Color4 lightAmbient;        //光源の環境光成分
-        //Color4 lightDiffuse;        //光源の拡散光成分
-        //Color4 lightSpecular;       //光源の鏡面光成分
-
         Color4 materialAmbient;     //材質の環境光成分
         Color4 materialDiffuse;	//材質の拡散光成分
         Color4 materialSpecular;    //材質の鏡面光成分
@@ -1605,12 +1601,23 @@ namespace kinect_test
         int ibo2;                   //IBOのバッファの識別番号を保持
         int vao2;					//VAOの識別番号を保持
         int ColorTexture;                //背景画像
-        int size = 512;             //textureサイズ
+        int size = 256;             //textureサイズ
 
         //試験用
         int DepthTexture;
         //fbo
         int fbo_screen;
+
+        #region shader
+        int vertexShader;
+        int fragmentShader;
+        int shaderProgram;
+
+        int mapLoc;
+        int shyLoc;
+        //球面調和関数 Y
+        float[] shy = new float[9]{0.282095f, 0.488603f, 0.488603f, 0.488603f, 1.092548f, 1.092548f, 0.315392f, 1.092548f, 0.546274f};
+        #endregion
 
         public Game() : base(800, 600, GraphicsMode.Default, "GraphicsWindow")
         {
@@ -1713,17 +1720,17 @@ namespace kinect_test
             base.OnLoad(e);
             //ウィンドウの背景
             GL.ClearColor(0.3f, 0.5f, 0.8f, 0.0f);
+
             //Enable 使用可能にする（デプスバッファの使用）
             GL.Enable(EnableCap.DepthTest);
             GL.Enable(EnableCap.Normalize);
             GL.Enable(EnableCap.CullFace);//カリングの許可
             GL.Enable(EnableCap.Multisample);
+            GL.Enable(EnableCap.VertexProgramPointSize);//ポイントの設定
+            GL.Enable(EnableCap.PointSprite);
+            GL.Enable(EnableCap.Blend); // ブレンドの許可
 
             GL.Disable(EnableCap.Lighting);
-
-            GL.ClearColor(Color4.DarkBlue);
-            //Enable 使用可能にする（デプスバッファの使用）
-            GL.Enable(EnableCap.DepthTest);
 
             //テクスチャの許可(2D・3D)
             GL.Enable(EnableCap.Texture2D);
@@ -1733,11 +1740,29 @@ namespace kinect_test
             GL.Enable(EnableCap.CullFace);　//カリングの許可
             GL.CullFace(CullFaceMode.Back); //どちらの面を描画しないか
             GL.FrontFace(FrontFaceDirection.Ccw); //表を時計回り(Cw)か反時計回り(Ccw)か
-
-            //ライティングON Light0を有効化
-            GL.Enable(EnableCap.Lighting);
-            GL.Enable(EnableCap.Light0); //Lightは最大8個まで
             */
+
+            #region texture
+            //テクスチャ用のバッファを生成
+            GL.GenTextures(1, out ColorTexture);
+            GL.BindTexture(TextureTarget.Texture2D, ColorTexture);
+            /*
+            Bitmap file = new Bitmap("test1.png");
+            //png画像の反転を直す
+            file.RotateFlip(RotateFlipType.RotateNoneFlipY);
+            //データ読み込み
+            BitmapData data = file.LockBits(new Rectangle(0, 0, file.Width, file.Height), ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, data.Width, data.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, data.Scan0);
+            */
+            //fboの時
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8, size, size, 0, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.MirroredRepeat);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.MirroredRepeat);
+
+            //GL.BindTexture(TextureTarget.Texture2D, 0);
+            #endregion
 
             //各Arrayを有効化
             GL.EnableClientState(ArrayCap.VertexArray);
@@ -1785,30 +1810,67 @@ namespace kinect_test
 
             GL.BindVertexArray(0);
             #endregion()
-            
-            //テクスチャ用===================================
-            #region texture
-            //テクスチャ用のバッファを生成
-            GL.GenTextures(1, out ColorTexture);
-            GL.BindTexture(TextureTarget.Texture2D, ColorTexture);
 
-            Bitmap file = new Bitmap("test1.png");
-            //png画像の反転を直す
-            file.RotateFlip(RotateFlipType.RotateNoneFlipY);
-            //データ読み込み
-            BitmapData data = file.LockBits(new Rectangle(0, 0, file.Width, file.Height), ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            #region Shader
+            int status;
+            //バーテックスシェーダを生成
+            vertexShader = GL.CreateShader(ShaderType.VertexShader);
+            using (var sr = new StreamReader("shader.vert"))
+            {
+                //バーテックスシェーダのコードを指定
+                GL.ShaderSource(vertexShader, sr.ReadToEnd());
+            }
+            //バーテックスシェーダをコンパイル
+            GL.CompileShader(vertexShader);
+            GL.GetShader(vertexShader, ShaderParameter.CompileStatus, out status);
+            //コンパイル結果をチェック
+            if (status == 0)
+            {
+                throw new ApplicationException(GL.GetShaderInfoLog(vertexShader));
+            }
 
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, data.Width, data.Height, 0, OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, data.Scan0);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToBorder);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToBorder);
+            //シェーダオブジェクト(フラグメント)を生成
+            fragmentShader = GL.CreateShader(ShaderType.FragmentShader);
 
-            //GL.BindTexture(TextureTarget.Texture2D, 0);
+            using (var sr = new StreamReader("shader.frag"))
+            {
+                //フラグメントシェーダのコードを指定
+                GL.ShaderSource(fragmentShader, sr.ReadToEnd());
+            }
+            //フラグメントシェーダをコンパイル
+            GL.CompileShader(fragmentShader);
+            GL.GetShader(fragmentShader, ShaderParameter.CompileStatus, out status);
+            //コンパイル結果をチェック
+            if (status == 0)
+            {
+                throw new ApplicationException(GL.GetShaderInfoLog(fragmentShader));
+            }
+
+            //シェーダプログラムの生成
+            shaderProgram = GL.CreateProgram();
+            //各シェーダオブジェクトをシェーダプログラムへ登録
+            GL.AttachShader(shaderProgram, vertexShader);
+            GL.AttachShader(shaderProgram, fragmentShader);
+            //不要になったシェーダオブジェクトの削除
+            GL.DeleteShader(vertexShader);
+            GL.DeleteShader(fragmentShader);
+            //シェーダプログラムのリンク
+            GL.LinkProgram(shaderProgram);
+            //GL.GetProgram(shaderProgram, ProgramParameter.LinkStatus, out status);
+            GL.GetProgram(shaderProgram, GetProgramParameterName.LinkStatus, out status);
+            //シェーダプログラムのリンクのチェック
+            if (status == 0)
+            {
+                throw new ApplicationException(GL.GetProgramInfoLog(shaderProgram));
+            }
+            mapLoc = GL.GetUniformLocation(shaderProgram, "irradiance");
+            shyLoc = GL.GetUniformLocation(shaderProgram, "shy");
+            GL.Uniform1(shyLoc, shy[9]);
+            //シェーダプログラムを使用
+            GL.UseProgram(shaderProgram);
             #endregion
-            /*
-            #endregion
 
+            #region fbo
             //一応Depthも試験的に作ってみる
             GL.GenTextures(1, out DepthTexture);
             GL.BindTexture(TextureTarget.Texture2D, DepthTexture);
@@ -1824,84 +1886,51 @@ namespace kinect_test
             GL.Ext.BindFramebuffer(FramebufferTarget.FramebufferExt, fbo_screen);
             GL.Ext.FramebufferTexture2D(FramebufferTarget.FramebufferExt, FramebufferAttachment.ColorAttachment0Ext, TextureTarget.Texture2D, ColorTexture, 0);
             GL.Ext.FramebufferTexture2D(FramebufferTarget.FramebufferExt, FramebufferAttachment.DepthAttachmentExt, TextureTarget.Texture2D, DepthTexture, 0);
-
             //エラーチェック
-            FramebufferErrorCode status = GL.CheckFramebufferStatus(FramebufferTarget.FramebufferExt);
-            if (status != FramebufferErrorCode.FramebufferComplete &&
-                status != FramebufferErrorCode.FramebufferCompleteExt)
+            FramebufferErrorCode fbostatus = GL.CheckFramebufferStatus(FramebufferTarget.FramebufferExt);
+            if (fbostatus != FramebufferErrorCode.FramebufferComplete &&
+                fbostatus != FramebufferErrorCode.FramebufferCompleteExt)
             {
                 Console.WriteLine("Error creating framebuffer: {0}", status);
             }
-
             //FBO（https://github.com/mono/opentk/blob/main/Source/Examples/OpenGL/1.x/FramebufferObject.cs）
             GL.PushAttrib(AttribMask.ViewportBit);
             {
-                GL.Viewport(0, 0, size, size);
-
-                // clear the screen in red, to make it very obvious what the clear affected. only the FBO, not the real framebuffer
                 GL.ClearColor(0f, 0f, 0f, 0f);
                 GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-                OpenTK.Matrix4 perspective = OpenTK.Matrix4.CreatePerspectiveFieldOfView(MathHelper.PiOver4, size / (float)size, 1.0f, 3.0f);
+                //描画サイズ・カメラの設定
+                GL.Viewport(0, 0, size, size);
+                OpenTK.Matrix4 perspective = OpenTK.Matrix4.CreateOrthographic(size, size, 0f, 1.0f);
                 GL.MatrixMode(MatrixMode.Projection);
                 GL.LoadMatrix(ref perspective);
 
-                Matrix4 lookat = Matrix4.LookAt(0f, 0f, 2.4f, 0f, 0f, 0f, 0f, 1f, 0f);
+                Matrix4 lookat = Matrix4.LookAt(0f, 0f, 1.0f, 0f, 0f, 0f, 0f, 1f, 0f);
                 GL.MatrixMode(MatrixMode.Modelview);
                 GL.LoadMatrix(ref lookat);
 
-                // draw some complex object into the FBO's textures
-                GL.Enable(EnableCap.ColorMaterial);
                 //FBOの加算を有効に
                 GL.Enable(EnableCap.Blend);
                 GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
                 GL.BlendEquation(BlendEquationMode.FuncAdd);
 
                 //http://penguinitis.g1.xrea.com/computer/programming/OpenGL/23-blend.html
-                GL.Disable(EnableCap.DepthTest);
+                GL.Disable(EnableCap.DepthTest); //z座標が同じものをBlendするにはDepthTestを切る
 
-                MakeMap(1.0f, 50f, 0.0f);
-                /*
+                //(128, 256, 0)
+                MakeMap(128f, 25f, 0.0f);
 
-                GL.Begin(BeginMode.Quads);
-
-                GL.Color4(Color4.Red);                            //色名で指定
-                GL.Vertex3(-1.0f, 1.0f, -0.0f);
-                GL.Color4(new float[] { 1.0f, 0.0f, 0.0f, 1.0f });  //配列で指定
-                GL.Vertex3(-1.0f, -1.0f, -0.0f);
-                GL.Color4(1.0f, 0.0f, 0.0f, 1.0f);                  //4つの引数にfloat型で指定
-                GL.Vertex3(0.1f, -1.0f, -0.0f);
-                GL.Color4((byte)255, (byte)0, (byte)0, (byte)255);  //byte型で指定
-                GL.Vertex3(0.1f, 1.0f, -0.0f);
-                GL.End();
-
-                GL.Begin(BeginMode.Quads);
-
-                GL.Color4(Color4.Blue);                            //色名で指定
-                GL.Vertex3(-0.1f, 1.0f, 0.0f);
-                GL.Color4(new float[] { 0.0f, 1.0f, 0.0f, 1.0f });  //配列で指定
-                GL.Vertex3(-0.1f, -1.0f, 0.0f);
-                GL.Color4(0.0f, 0.0f, 0.0f, 1.0f);                  //4つの引数にfloat型で指定
-                GL.Vertex3(1.0f, -1.0f, 0.0f);
-                GL.Color4((byte)0, (byte)0, (byte)255, (byte)255);  //byte型で指定
-                GL.Vertex3(1.0f, 1.0f, 0.0f);
-                GL.End();
-                
-                
-                GL.Disable(EnableCap.ColorMaterial);
-                GL.Disable(EnableCap.Light0);
-                GL.Disable(EnableCap.Lighting);
                 GL.Disable(EnableCap.Blend);
-
                 GL.Enable(EnableCap.DepthTest);
+                GL.UseProgram(0);
             }
             GL.PopAttrib();
             GL.Ext.BindFramebuffer(FramebufferTarget.FramebufferExt, 0); // disable rendering into the FBO
 
             //初期画面背景
             GL.ClearColor(Color4.DarkBlue);
-            */
-            
+            #endregion
+
         }
 
         //ウィンドウの終了時に実行される。
@@ -1921,6 +1950,8 @@ namespace kinect_test
             GL.DisableClientState(ArrayCap.TextureCoordArray);
 
             GL.DeleteTexture(ColorTexture);   //使用したテクスチャの削除
+
+            GL.DeleteProgram(shaderProgram);//シェーダの削除
 
             GL.DeleteFramebuffers(1, ref fbo_screen);
         }
@@ -1984,7 +2015,7 @@ namespace kinect_test
             base.OnRenderFrame(e);
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-            
+
             #region TransFormationMatrix
 
             Matrix4 modelView = Matrix4.LookAt(OpenTK.Vector3.UnitZ * 10 / zoom, OpenTK.Vector3.Zero, OpenTK.Vector3.UnitY);
@@ -2007,36 +2038,33 @@ namespace kinect_test
             GL.Viewport(0, 0, Width, Height);
 
             GL.BindTexture(TextureTarget.Texture2D, ColorTexture);
-            
 
             //球を描画
             GL.BindVertexArray(vao2);
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ibo2);
             GL.DrawElements(BeginMode.Quads, indices2.Length, DrawElementsType.UnsignedInt, 0);
             GL.BindVertexArray(0);
-            
+
 
             //Texture
             GL.Color4(Color4.White);
-			GL.Begin(BeginMode.Quads);
+            GL.Begin(BeginMode.Quads);
 
-			GL.TexCoord2(1.0, 1.0);
-			GL.Vertex3(3, 1, 0);
+            GL.TexCoord2(1.0, 1.0);
+            GL.Vertex3(3, 1, 0);
 
-			GL.TexCoord2(0.0, 1.0);
-			GL.Vertex3(1, 1, 0);
+            GL.TexCoord2(0.0, 1.0);
+            GL.Vertex3(1, 1, 0);
 
-			GL.TexCoord2(0.0, 0.0);
-			GL.Vertex3(1, -1, 0);
+            GL.TexCoord2(0.0, 0.0);
+            GL.Vertex3(1, -1, 0);
 
-			GL.TexCoord2(1.0, 0.0);
-			GL.Vertex3(3, -1, 0);
+            GL.TexCoord2(1.0, 0.0);
+            GL.Vertex3(3, -1, 0);
 
-			GL.End();
+            GL.End();
 
             GL.BindTexture(TextureTarget.Texture2D, 0);
-
-            GL.Flush();
 
             SwapBuffers();
         }
@@ -2081,20 +2109,18 @@ namespace kinect_test
             vertices2 = vertexList.ToArray();
             indices2 = indexList.ToArray();
         }
-        
+
         /*
         //トーラスの初期化
         void InitTorus(int row, int column, double smallRadius, double largeRadius)
         {
             LinkedList<Vertex> vertexList = new LinkedList<Vertex>();
             LinkedList<int> indexList = new LinkedList<int>();
-
             for (int i = 0; i <= row; i++)
             {
                 double sr = (2.0 * Math.PI / row) * i;
                 double cossr = Math.Cos(sr);
                 double sinsr = Math.Sin(sr);
-
                 double sx = cossr * smallRadius;
                 double sy = sinsr * smallRadius;
                 for (int j = 0; j <= column; j++)
@@ -2102,22 +2128,18 @@ namespace kinect_test
                     double lr = (2.0 * Math.PI / column) * j;
                     double coslr = Math.Cos(lr);
                     double sinlr = Math.Sin(lr);
-
                     double px = coslr * (sx + largeRadius);
                     double py = sy;
                     double pz = sinlr * (sx + largeRadius);
-
                     double nx = cossr * coslr;
                     double ny = sinsr;
                     double nz = cossr * sinlr;
-
                     OpenTK.Vector3 position = new OpenTK.Vector3((float)px, (float)py, (float)pz);
                     OpenTK.Vector3 normal = new OpenTK.Vector3((float)nx, (float)ny, (float)nz);
                     OpenTK.Vector2 uv = new OpenTK.Vector2((float)(nx + 1) / 2, (float)(ny + 1) / 2);
                     vertexList.AddLast(new Vertex(position, normal, uv));
                 }
             }
-
             for (int i = 0; i < row; i++)
             {
                 for (int j = 0; j < column; j++)
@@ -2129,24 +2151,10 @@ namespace kinect_test
                     indexList.AddLast(d + 1);
                 }
             }
-
             vertices1 = vertexList.ToArray();
             indices1 = indexList.ToArray();
         }
         */
-        void initwall(int width, int height, float depth)
-        {
-            GL.Begin(BeginMode.Quads);
-            GL.Normal3(0.0f, 0.0f, 1.0f);
-            GL.Color4(1.0, 1.0, 1.0, 1.0);
-            GL.Vertex3(width/2 , height/2, depth);
-            GL.Color4(1.0, 1.0, 0.0, 1.0);
-            GL.Vertex3(-width / 2, height / 2, depth);
-            GL.Color4(1.0, 1.0, 1.0, 1.0);
-            GL.Vertex3(-width / 2, -height / 2, depth);
-            GL.Vertex3(width / 2, -height / 2, depth);
-            GL.End();
-        }
 
         //球を描画する
         private void DrawSphere()
@@ -2186,20 +2194,31 @@ namespace kinect_test
         //放射照度マップの描画(w：描画範囲の縦横幅)
         void MakeMap(float wh, float r, float depth)
         {
-
             //マップのUV座標
             int mu = 0, mv = 0;
             int nx = 0, ny = 0;
             float half_w = MainWindow.map_w / 2;
             float half_h = MainWindow.map_h / 2;
             //マップ上に点を打つ
+
+            //同じ座標に点が重ねられていて真っ白っぽくなっている（たぶん投影変換のところ）(座標は256✖256)
+            GL.PointSize(r);
+            GL.Begin(BeginMode.Points);
+            GL.Color4(0.0f, 1.0f, 0.1f, 1.0f);
+            GL.Vertex3(128.0f, 0.0f, depth);
+            GL.End();
+            float[] elem = new float[2];
             for (int i = 0; i < MainWindow.irradiancemap.GetLength(0); i++)
             {
-                if (MainWindow.irradiancemap[i,0] != 0 && MainWindow.irradiancemap[i,1] != 0)
+                if (MainWindow.irradiancemap[i, 0] != 0 && MainWindow.irradiancemap[i, 1] != 0)
                 {
+                    elem[0] = (float)MainWindow.irradiancemap[i, 0];
+                    elem[1] = (float)MainWindow.irradiancemap[i, 1];
+                    GL.Uniform2(mapLoc, 1, elem);
                     //座標は０スタート
                     mu = i % MainWindow.map_w;
                     mv = i / MainWindow.map_w;
+                    Debug.WriteLine(mu);
                     //uv座標を-1～1の範囲に変換（-wh～wh）
                     GL.PointSize(r);
                     GL.Begin(BeginMode.Points);
@@ -2208,7 +2227,6 @@ namespace kinect_test
                     GL.End();
                 }
             }
-            //GL.End();
         }
     }
 }

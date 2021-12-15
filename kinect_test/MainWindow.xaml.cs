@@ -58,10 +58,10 @@ namespace kinect_test
         bool click;
 
         //マップの幅
-        public static int map_w = 256;
-        public static int map_h = 256;
+        public static int map_w = 128;
+        public static int map_h = 128;
         //放射照度マップ
-        public static double[,] irradiancemap = new double[256 * 256, 2];//傾きとy切片を格納
+        public static double[,] irradiancemap = new double[128 * 128, 2];//傾きとy切片を格納
 
         public MainWindow()
         {
@@ -893,7 +893,7 @@ namespace kinect_test
             }
         }
 
-        //Kmeans法によるクラスタリング（拡散色＋頂点座標に改良予定）
+        //Kmeans法によるクラスタリング（頂点色＋頂点座標に改良予定）
         //問題点：範囲外の黒い部分も対象になっている
         //対策：マスクを用意する（mask[i] = 1の時だけKmeasnで計算、あとからmask[i] = 1の箇所に上から順に画素値を代入させる）
         private byte[] Km_colpos(int[] vertexdata, byte[] rscolor, byte[] mask, byte[] km_img)
@@ -1080,15 +1080,16 @@ namespace kinect_test
                 {
                     a = (datanum[j] * xy_sum[j] - x_sum[j] * y_sum[j]) / (datanum[j] * xx_sum[j] - x_sum[j] * x_sum[j]);
                     b = (xx_sum[j] * y_sum[j] - x_sum[j] * xy_sum[j]) / (datanum[j] * xx_sum[j] - x_sum[j] * x_sum[j]);
-                    /*
+                    
                     if(Double.IsNaN(a) || Double.IsInfinity(a))
                     {
                         a = 0;
                         b = 0;
                     }
-                    */
+                    
                     irradiancemap[j, 0] = a;
                     irradiancemap[j, 1] = b;
+                    
                 }
             }
             /*
@@ -1097,8 +1098,7 @@ namespace kinect_test
                 Debug.WriteLine(irradiancemap[i,0] + " , " + irradiancemap[i, 1]);
             }
             */
-            //値の無い箇所は補間（後回し）
-            //irradiancemap = Interpolation(irradiancemap);
+            
 
             byte[] irmap = new byte[irradiancemap.Length * colorFrameDescription.BytesPerPixel];
             for (int j = 0; j < datanum.Length; j++)
@@ -1138,6 +1138,15 @@ namespace kinect_test
             return irradiancemap;
         }
 
+        public void opentk()
+        {
+            using (Game window = new Game())
+            {
+                window.Run(30.0);
+            }
+        }
+        /*=============使わなくなった関数=====================================================================================================*/
+        #region disused
         //補間関数
         public double[,] Interpolation(double[,] irradiancemap)
         {
@@ -1208,15 +1217,6 @@ namespace kinect_test
             return irradiancemap;
         }
 
-        public void opentk()
-        {
-            using (Game window = new Game())
-            {
-                window.Run(30.0);
-            }
-        }
-        /*=============使わなくなった関数=====================================================================================================*/
-        #region disused
         private double[] Create_Hsi(byte[] colorbuffer, double[] hsi)
         {
             //要素（Ix、Iy、Iz）を求める
@@ -1244,7 +1244,6 @@ namespace kinect_test
                     hsi[index + 1] = Math.Sqrt(ibuffer[index] * ibuffer[index] + ibuffer[index + 1] * ibuffer[index + 1]);//saturation
                     hsi[index + 2] = ibuffer[index + 2];//intensity
                 }
-                //Debug.WriteLine(hsi[index] + " " + ibuffer[index]);
             }
             return hsi;
         }
@@ -1601,7 +1600,7 @@ namespace kinect_test
         int ibo2;                   //IBOのバッファの識別番号を保持
         int vao2;					//VAOの識別番号を保持
         int ColorTexture;                //背景画像
-        int size = 256;             //textureサイズ
+        int size = 128;             //textureサイズ
 
         //試験用
         int DepthTexture;
@@ -1615,8 +1614,9 @@ namespace kinect_test
 
         int mapLoc;
         int shyLoc;
+        int clmLoc;
         //球面調和関数 Y
-        float[] shy = new float[9]{0.282095f, 0.488603f, 0.488603f, 0.488603f, 1.092548f, 1.092548f, 0.315392f, 1.092548f, 0.546274f};
+        float[] shy = new float[9] { 0.282095f, 0.488603f, 0.488603f, 0.488603f, 1.092548f, 1.092548f, 0.315392f, 1.092548f, 0.546274f };
         #endregion
 
         public Game() : base(800, 600, GraphicsMode.Default, "GraphicsWindow")
@@ -1865,7 +1865,8 @@ namespace kinect_test
             }
             mapLoc = GL.GetUniformLocation(shaderProgram, "irradiance");
             shyLoc = GL.GetUniformLocation(shaderProgram, "shy");
-            GL.Uniform1(shyLoc, shy[9]);
+            clmLoc = GL.GetUniformLocation(shaderProgram, "clm");
+            GL.Uniform1(shyLoc, 9, shy);
             //シェーダプログラムを使用
             GL.UseProgram(shaderProgram);
             #endregion
@@ -1911,14 +1912,16 @@ namespace kinect_test
 
                 //FBOの加算を有効に
                 GL.Enable(EnableCap.Blend);
-                GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
-                GL.BlendEquation(BlendEquationMode.FuncAdd);
+                GL.BlendFunc(BlendingFactor.OneMinusDstColor, BlendingFactor.One);
+                //GL.BlendEquation(BlendEquationMode.FuncAdd);
 
                 //http://penguinitis.g1.xrea.com/computer/programming/OpenGL/23-blend.html
                 GL.Disable(EnableCap.DepthTest); //z座標が同じものをBlendするにはDepthTestを切る
 
                 //(128, 256, 0)
-                MakeMap(128f, 25f, 0.0f);
+                //MakeMap(128f, 256f, 0.0f);
+                MakeMap_SH();
+
 
                 GL.Disable(EnableCap.Blend);
                 GL.Enable(EnableCap.DepthTest);
@@ -2191,7 +2194,95 @@ namespace kinect_test
             }
         }
 
-        //放射照度マップの描画(w：描画範囲の縦横幅)
+        //ポイントスプライトで一つの円を描こう
+        void MakeMap_SH()
+        {
+            //マップのUV座標
+            int mu = 0, mv = 0;
+            int nx = 0, ny = 0;
+            float half_w = MainWindow.map_w / 2;
+            float half_h = MainWindow.map_h / 2;
+            float x = 0, y = 0, z = 0;
+            //球面調和関数展開
+            float[] clm = new float[9];
+            //clmを求めていく
+            for (int i = 0; i < 9; i++)
+            {
+                float sum = 0;
+                float n_data = 0;
+                for (int j = 0; j < MainWindow.irradiancemap.GetLength(0); j++)
+                {
+                    if (MainWindow.irradiancemap[j, 0] != 0 && MainWindow.irradiancemap[j, 1] != 0)
+                    {
+                        mu = j % MainWindow.map_w;
+                        mv = j / MainWindow.map_w;
+                        x = (mu - half_w) / half_w;
+                        y = (half_h - mv) / half_h;
+                        float sin = (float)Math.Sqrt(x * x + y * y);
+                        if(sin > 1)
+                        {
+                            z = 0;
+                        }
+                        else
+                        {
+                            z = (float)Math.Sqrt(1 - x * x - y * y);
+                        }
+
+                        if (i == 0)
+                        {
+                            sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * sin;
+                        }else if (i == 8)//Y22
+                        {
+                            sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * (x * x - y * y) * sin;
+                        }else if (i == 6)
+                        {
+                            sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * (3 * z * z - 1) * sin;
+                        }else if (i == 1)
+                        {
+                            sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * y * sin;
+                        }else if (i == 2)
+                        {
+                            sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * z * sin;
+                        }else if (i == 3)
+                        {
+                            sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * x * sin;
+                        }else if (i == 4)
+                        {
+                            sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * x * y * sin;
+                        }
+                        else if (i == 5)
+                        {
+                            sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * z * y * sin;
+                        }
+                        else if (i == 7)
+                        {
+                            sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * x * z * sin;
+                        }
+                        n_data++;
+
+                    }
+                }
+                //これでC_l^mは求まった
+                clm[i] = sum / n_data;
+                Debug.WriteLine(clm[i]);
+            }
+            GL.Uniform1(clmLoc, 9, clm);
+
+            //同じ座標に点が重ねられていて真っ白っぽくなっている（たぶん投影変換のところ）(座標は256✖256)
+            GL.PointSize(128);
+            GL.Begin(BeginMode.Points);
+            GL.Color4(1f, 1f, 11f, 1.0f);
+            GL.Vertex3(0,0,0);
+            GL.End();
+        }
+
+        float Clm_compute(int l, int m, int theta, int phi)
+        {
+
+            return 0;
+        }
+
+        //放射照度マップの描画(w：描画範囲の縦横幅)(各点をポイントスプライトで重ねる➡密度に依存する)
         void MakeMap(float wh, float r, float depth)
         {
             //マップのUV座標
@@ -2199,6 +2290,7 @@ namespace kinect_test
             int nx = 0, ny = 0;
             float half_w = MainWindow.map_w / 2;
             float half_h = MainWindow.map_h / 2;
+            
             //マップ上に点を打つ
 
             //同じ座標に点が重ねられていて真っ白っぽくなっている（たぶん投影変換のところ）(座標は256✖256)
@@ -2218,7 +2310,6 @@ namespace kinect_test
                     //座標は０スタート
                     mu = i % MainWindow.map_w;
                     mv = i / MainWindow.map_w;
-                    Debug.WriteLine(mu);
                     //uv座標を-1～1の範囲に変換（-wh～wh）
                     GL.PointSize(r);
                     GL.Begin(BeginMode.Points);
@@ -2227,6 +2318,8 @@ namespace kinect_test
                     GL.End();
                 }
             }
+            //正規化
+
         }
     }
 }

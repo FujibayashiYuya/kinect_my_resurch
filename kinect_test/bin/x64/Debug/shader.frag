@@ -19,7 +19,7 @@ void main(void)
 	n.xy = gl_PointCoord * 2.0 - 1.0;
 	x = dot(n.xy, n.xy);
 	n.z = 1.0 - x;
-	if(n.z < 0.0) discard;
+	if(n.z < -0.05) discard;
 
 	e = k1 * clm[8] * (n.x * n.x - n.y * n.y) + k3 * clm[6] * n.z * n.z + k4 * clm[0] - k5 * clm[6]
 	    + 2 * k1 * (clm[4] * n.x * n.y + clm[7] * n.x * n.z + clm[5] * n.y * n.z)

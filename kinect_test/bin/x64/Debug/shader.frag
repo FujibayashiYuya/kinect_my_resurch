@@ -26,4 +26,8 @@ void main(void)
 		+ 2 * k2 * (clm[3] * n.x + clm[1] * n.y + clm[2] * n.z);
 
     gl_FragColor = vec4(e, e, e, 1.0);
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> e1ca31adf530565839c8088c3df2cad259e08c80

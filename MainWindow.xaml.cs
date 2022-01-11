@@ -703,6 +703,9 @@ namespace kinect_test
 
         private byte[] Remove_specular(double[] ibuffer, double[] hsi, byte[] colorbuffer, byte[] rm_color)
         {
+            //test用
+            byte[] test = new byte[rm_color.Length];
+
             var hsit = new List<List<Vec2d>>();
             hsit.Add(new List<Vec2d>());
             //hueを 24分割にしてみる
@@ -766,12 +769,15 @@ namespace kinect_test
                 //RGBの値が近いと鏡面反射成分の除去がおかしくなる
                 int maxcol = Math.Max(colorbuffer[index], Math.Max(colorbuffer[index + 1], colorbuffer[index + 2]));
                 int mincol = Math.Min(colorbuffer[index], Math.Min(colorbuffer[index + 1], colorbuffer[index + 2]));
-                if (maxcol - mincol < 16)
+                if (maxcol - mincol < 1)
                 {
                     rm_color[index] = colorbuffer[index];
                     rm_color[index + 1] = colorbuffer[index + 1];
                     rm_color[index + 2] = colorbuffer[index + 2];
                     mask[j] = 0;
+                    test[index] = colorbuffer[index];
+                    test[index + 1] = colorbuffer[index + 1];
+                    test[index + 2] = colorbuffer[index + 2];
                 }
                 else
                 {
@@ -794,10 +800,16 @@ namespace kinect_test
                     r = iz + ix * 2 / 3;
 
                     //RGBの内最大値が255になるように正規化
+                    
                     Pixel_normaliz(rmc, b, g, r);
                     rm_color[index] = rmc[0];
                     rm_color[index + 1] = rmc[1];
                     rm_color[index + 2] = rmc[2];
+                    
+                    test[index] = (byte)b;
+                    test[index + 1] = (byte)g;
+                    test[index + 2] = (byte)r;
+                    
                 }
             }
             //表示
@@ -807,6 +819,11 @@ namespace kinect_test
             Mat src = BitmapSourceConverter.ToMat(rem_color);
             Cv2.ImShow("re_col", src);
             SaveImage(rem_color, "remove_spec.png");
+
+            BitmapSource testB = BitmapSource.Create(this.depthFrameDescription.Width,
+            this.depthFrameDescription.Height,
+            96, 96, PixelFormats.Bgr32, null, test, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+            SaveImage(testB, "notseikika.png");
             return rm_color;
         }
 

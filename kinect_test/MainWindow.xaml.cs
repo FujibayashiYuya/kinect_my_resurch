@@ -50,7 +50,7 @@ namespace kinect_test
         /// Map depth range to byte range
         /// </summary>
         private const int MapDepthToByte = 8000 / 256;
-
+        public static byte[] mask;
         //内部データ
         private CameraIntrinsics calibrationData;
 
@@ -125,7 +125,7 @@ namespace kinect_test
             mapper.MapDepthFrameToColorSpace(depthFrameData, colorSpace);
 
             //マスク用
-            var mask = new byte[depthFrameDescription.LengthInPixels];
+            mask = new byte[depthFrameDescription.LengthInPixels];
             for (int i = 0; i < this.depthFrameData.Length; ++i)
             {
                 int colorX = (int)colorSpace[i].X;
@@ -208,7 +208,7 @@ namespace kinect_test
                 //バイラテラルフィルタ2回
                 
                 depthFrameData = BilateralFilter(depthFrameData);
-                depthFrameData = BilateralFilter(depthFrameData);  
+                depthFrameData = BilateralFilter(depthFrameData);
                 /*
                 depthFrameData = AverageFilter(depthFrameData);
                 depthFrameData = AverageFilter(depthFrameData);
@@ -372,6 +372,10 @@ namespace kinect_test
                 vertexImage[colorImageIndex + 1] = (byte)(vertexData[colorImageIndex + 1] / range_y * 255);//y G
                 vertexImage[colorImageIndex + 2] = (byte)(255 * (vertexData[colorImageIndex + 2] - 500) / 7500);//z R
             }
+            //Debug.WriteLine("FX" + calibrationData.FocalLengthX);//364.3412
+            //Debug.WriteLine("FY" + calibrationData.FocalLengthY);//364.3412
+            //Debug.WriteLine("ppx" + calibrationData.PrincipalPointX);//255.9664
+            //Debug.WriteLine("ppy" + calibrationData.PrincipalPointY);//208.4841
             //頂点マップの表示
             BitmapSource vertexMap = BitmapSource.Create(this.depthFrameDescription.Width,
                 this.depthFrameDescription.Height,
@@ -473,8 +477,8 @@ namespace kinect_test
         {
             int uw = 0;
             int uh = 0;
-            double a = -0.001;
-            double b = -0.01;
+            double a = -0.01;
+            double b = -0.05;
             ushort[] smoothingdepth = new ushort[depthFrameData.Length];
             float w_deno;
             float d_mole;
@@ -676,6 +680,9 @@ namespace kinect_test
 
         private byte[] Remove_specular(double[] ibuffer, double[] hsi, byte[] colorbuffer, byte[] rm_color)
         {
+            //test用
+            byte[] test = new byte[rm_color.Length];
+
             var hsit = new List<List<Vec2d>>();
             hsit.Add(new List<Vec2d>());
             //hueを 24分割にしてみる
@@ -736,7 +743,20 @@ namespace kinect_test
             for (uint j = 0; j < depthFrameData.Length; j++)
             {
                 index = j * colorFrameDescription.BytesPerPixel;
-                if (colorbuffer[index] != colorbuffer[index + 1] && colorbuffer[index + 1] != colorbuffer[index + 2])
+                //RGBの値が近いと鏡面反射成分の除去がおかしくなる
+                int maxcol = Math.Max(colorbuffer[index], Math.Max(colorbuffer[index + 1], colorbuffer[index + 2]));
+                int mincol = Math.Min(colorbuffer[index], Math.Min(colorbuffer[index + 1], colorbuffer[index + 2]));
+                if (maxcol - mincol < 1)
+                {
+                    rm_color[index] = colorbuffer[index];
+                    rm_color[index + 1] = colorbuffer[index + 1];
+                    rm_color[index + 2] = colorbuffer[index + 2];
+                    mask[j] = 0;
+                    test[index] = colorbuffer[index];
+                    test[index + 1] = colorbuffer[index + 1];
+                    test[index + 2] = colorbuffer[index + 2];
+                }
+                else
                 {
                     hsi[index] = (hsi[index] - 90) * Math.PI / 180;
                     if (ibuffer[index] < 0 && ibuffer[index + 1] < 0)
@@ -757,31 +777,16 @@ namespace kinect_test
                     r = iz + ix * 2 / 3;
 
                     //RGBの内最大値が255になるように正規化
+
                     Pixel_normaliz(rmc, b, g, r);
                     rm_color[index] = rmc[0];
                     rm_color[index + 1] = rmc[1];
                     rm_color[index + 2] = rmc[2];
-                    /*
-                    max = Math.Max(b, Math.Max(g, r));
-                    if (max > 255)
-                    {
-                        Pixel_normaliz(rmc, b, g, r);
-                        rm_color[index] = rmc[0];
-                        rm_color[index + 1] = rmc[1];
-                        rm_color[index + 2] = rmc[2];
-                    }
-                    else
-                    {
-                        rm_color[index] = (byte)b;
-                        rm_color[index + 1] = (byte)g;
-                        rm_color[index + 2] = (byte)r;
-                    }*/
-                }
-                else
-                {
-                    rm_color[index] = colorbuffer[index];
-                    rm_color[index + 1] = colorbuffer[index + 1];
-                    rm_color[index + 2] = colorbuffer[index + 2];
+
+                    test[index] = (byte)b;
+                    test[index + 1] = (byte)g;
+                    test[index + 2] = (byte)r;
+
                 }
             }
             //表示
@@ -790,6 +795,12 @@ namespace kinect_test
             96, 96, PixelFormats.Bgr32, null, rm_color, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
             Mat src = BitmapSourceConverter.ToMat(rem_color);
             Cv2.ImShow("re_col", src);
+            SaveImage(rem_color, "remove_spec.png");
+
+            BitmapSource testB = BitmapSource.Create(this.depthFrameDescription.Width,
+            this.depthFrameDescription.Height,
+            96, 96, PixelFormats.Bgr32, null, test, this.depthFrameDescription.Width * (int)this.colorFrameDescription.BytesPerPixel);
+            SaveImage(testB, "notseikika.png");
             return rm_color;
         }
 

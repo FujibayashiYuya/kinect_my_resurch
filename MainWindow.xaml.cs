@@ -236,7 +236,7 @@ namespace kinect_test
                 //鏡面反射除去
                 rm_color = Remove_specular(ibuffer, hsi, colorImageBuffer, rm_color);
                 //rm_color = Sfimage_miyazaki(ibuffer, rm_color);//宮崎先生の手法
-
+                
                 //鏡面反射除去画像を用いてクラスタリング（アルベド推定）
                 km_img = Km_colpos(vertexData, rm_color, mask, km_img);
 
@@ -745,7 +745,7 @@ namespace kinect_test
             for (uint j = 0; j < depthFrameData.Length; j++)
             {
                 index = j * colorFrameDescription.BytesPerPixel;
-                //RGBの値が近いと鏡面反射成分の除去がおかしくなる
+                //RGBの値が近いと鏡面反射成分の除去がおかしくなる（最大値-最小値の値で閾値設定）
                 int maxcol = Math.Max(colorbuffer[index], Math.Max(colorbuffer[index + 1], colorbuffer[index + 2]));
                 int mincol = Math.Min(colorbuffer[index], Math.Min(colorbuffer[index + 1], colorbuffer[index + 2]));
                 if (maxcol - mincol < 25)
@@ -779,7 +779,6 @@ namespace kinect_test
                     r = iz + ix * 2 / 3;
 
                     //RGBの内最大値が255になるように正規化
-
                     Pixel_normaliz(rmc, b, g, r);
                     rm_color[index] = rmc[0];
                     rm_color[index + 1] = rmc[1];
@@ -813,6 +812,23 @@ namespace kinect_test
             rmc[1] = (byte)(g / max * 255);
             rmc[2] = (byte)(r / max * 255);
             return rmc;
+        }
+
+        private byte[] Image_normalize(byte[] image)
+        {
+            for(int i = 0; i < depthFrameData.Length; i++)
+            {
+                if(mask[i] != 0)
+                {
+                    int ind = (int)(i * colorFrameDescription.BytesPerPixel);
+                    byte[] test = new byte[3];
+                    Pixel_normaliz(test, image[ind], image[ind + 1], image[ind + 2]);
+                    image[ind] = test[0];
+                    image[ind + 1] = test[1];
+                    image[ind + 2] = test[2];
+                }
+            }
+            return image;
         }
 
         private byte[] Sfimage_miyazaki(double[] ibuffer, byte[] rm_color)
@@ -862,121 +878,15 @@ namespace kinect_test
         #endregion
 
         #region hsi_km
-        //Kmeans法によるクラスタリング（色＋頂点座標に改良予定）
-        private void Km_hsi(double[] hsi, double[,] normaldata, byte[] colorbuffer)
-        {
-            //Cv2.Kmeans;
-            const int CLASS = 16;
-            //色(もともとByte)＋頂点座標(int型)の6chのMat(★float型じゃないとダメ)
-            using (Mat src = new Mat(depthFrameDescription.Width * depthFrameDescription.Height, 1, MatType.CV_32FC(4)))
-            {
-                using (Mat cluster = new Mat())
-                {
-                    using (Mat centers = new Mat(CLASS, 1, MatType.CV_32FC(4)))
-                    {
-                        int i = 0;
-                        long index = 0;
-                        //引数byte[]をKmeans()に適した形にする
-                        for (int y = 0; y < depthFrameDescription.Height; y++)
-                        {
-                            for (int x = 0; x < depthFrameDescription.Width; x++, i++)
-                            {
-                                index = y * depthFrameDescription.Width + x;
-                                if (hsi[i * colorFrameDescription.BytesPerPixel] != 0)
-                                {
-                                    float hue = (float)(hsi[i * colorFrameDescription.BytesPerPixel]);
-                                    src.Set<float>(i, hue);
-                                    /*
-                                    Vec4f vec4f = new Vec4f
-                                    {
-                                        Item0 = (float)(hsi[i * colorFrameDescription.BytesPerPixel] * (180 / Math.PI)) + 90,//色相
-                                        Item1 = (float)(normaldata[index, 0] + 1) * 2,//法線
-                                        Item2 = (float)(normaldata[index, 1] + 1) * 2,
-                                        Item3 = (float)(normaldata[index, 2]) * 2
-                                    };
-                                    src.Set<Vec4f>(i, vec4f);
-                                    */
-                                }
-                            }
-                        }
-
-                        var criteria = new TermCriteria(type: CriteriaType.Eps | CriteriaType.MaxIter, maxCount: 10, epsilon: 1.0);
-                        Cv2.Kmeans(src, CLASS, cluster, criteria, 3, KMeansFlags.PpCenters, centers);
-                        for (int g = 0; g < CLASS; g++) Debug.WriteLine(centers.At<Vec6f>(g));
-                        i = 0;
-                        byte gs = 255 / CLASS;
-                        Mat output = new Mat(depthFrameDescription.Height, depthFrameDescription.Width, MatType.CV_8UC3);
-                        #region centercol
-                        /*
-                        //クラスごとのRGBを格納
-                        int[] sumcolor = new int[CLASS * 3];
-                        int[] classcount = new int[CLASS];
-                        for (int j = 0; j < depthFrameData.Length; i++)
-                        {
-                            int ind = cluster.Get<int>(i);
-                            classcount[ind] += 1;
-                            ind *= 3;
-                            sumcolor[ind] += colorbuffer[j++];//B
-                            sumcolor[ind + 1] += colorbuffer[j++];//G
-                            sumcolor[ind + 2] += colorbuffer[j++];//R
-                        }
-                        byte[] centercol = new byte[CLASS * 3];
-                        for (int k = 0; k < CLASS; k++)
-                        {
-                            int num = k * 3;
-                            centercol[num] = (byte)(sumcolor[num] / classcount[k]);
-                            centercol[num + 1] = (byte)(sumcolor[num + 1] / classcount[k]);
-                            centercol[num + 2] = (byte)(sumcolor[num + 2] / classcount[k]);
-                        }
-                        */
-                        i = 0;
-                        for (int y = 0; y < depthFrameDescription.Height; y++)
-                        {
-                            for (int x = 0; x < depthFrameDescription.Width; x++, i++)
-                            {
-                                //Vec3b col = new Vec3b();
-                                //0～7のクラスが割り当てられている
-                                int ind = cluster.Get<int>(i);
-                                //if (ind > 7 || ind < 0) Debug.WriteLine(ind + "sita");
-                                /*
-                                col[0] = centercol[ind];    //B
-                                col[1] = centercol[ind + 1];//G
-                                col[2] = centercol[ind + 2];//R
-                                */
-
-                                Vec3b col = new Vec3b();
-                                col[0] = (byte)(gs * ind);
-                                col[1] = (byte)(gs * ind);
-                                col[2] = (byte)(gs * ind);
-
-                                /*
-                                int firstComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[0]));
-                                firstComponent = firstComponent > 255 ? 255 : firstComponent < 0 ? 0 : firstComponent;
-                                col[0] = Convert.ToByte(firstComponent);
-                                int secondComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[1]));
-                                secondComponent = secondComponent > 255 ? 255 : secondComponent < 0 ? 0 : secondComponent;
-                                col[1] = Convert.ToByte(secondComponent);
-                                int thirdComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[2]));
-                                thirdComponent = thirdComponent > 255 ? 255 : thirdComponent < 0 ? 0 : thirdComponent;
-                                col[2] = Convert.ToByte(thirdComponent);
-                                //if (i < 20) Debug.WriteLine(col);
-                                */
-                                output.Set<Vec3b>(y, x, col);
-                            }
-                        }
-                        #endregion
-                        Cv2.ImShow("km_2", output);
-                        //Debug.WriteLine(colorFrameDescription.BytesPerPixel);
-                    }
-                }
-            }
-        }
 
         //Kmeans法によるクラスタリング（頂点色＋頂点座標に改良予定）
         //問題点：範囲外の黒い部分も対象になっている
         //対策：マスクを用意する（mask[i] = 1の時だけKmeasnで計算、あとからmask[i] = 1の箇所に上から順に画素値を代入させる）
         private byte[] Km_colpos(int[] vertexdata, byte[] rscolor, byte[] mask, byte[] km_img)
         {
+            //ここで正規化
+            //rscolor = Image_normalize(rscolor);
+
             //とりあえず2つの物体で考える
             const int CLASS = 3;
             int srcbuffercount = 0;
@@ -985,7 +895,7 @@ namespace kinect_test
                 if (mask[m] == 1) srcbuffercount++;
             }
             //色(もともとByte)＋頂点座標(int型)の6chのMat(★float型じゃないとダメ)
-            double adjust = 2.0;
+            double adjust = 1.5;
             TestKmeans("km1.5.png", CLASS, srcbuffercount, 1.5, vertexdata, rscolor, mask);
             TestKmeans("km1.75.png", CLASS, srcbuffercount, 1.75, vertexdata, rscolor, mask);
             TestKmeans("km2.0.png", CLASS, srcbuffercount, 2.0, vertexdata, rscolor, mask);
@@ -1072,7 +982,7 @@ namespace kinect_test
                             }
                         }
 
-                        Cv2.ImShow("km", output);
+                        //Cv2.ImShow("km", output);
                         //頂点マップの表示
                         BitmapSource kms = BitmapSource.Create(this.depthFrameDescription.Width,
                             this.depthFrameDescription.Height,
@@ -1244,29 +1154,53 @@ namespace kinect_test
                     datanum[uvind] += 1;
                     x_sum[uvind] += intens_km;
                     y_sum[uvind] += intens_rm;
-                    xy_sum[uvind] += intens_rm * intens_km;
-                    xx_sum[uvind] += intens_km * intens_km;
+                    xy_sum[uvind] += intens_rm * intens_km;//原点通るとき分子
+                    xx_sum[uvind] += intens_km * intens_km;//原点通るとき分母
                 }
             }
-
-            //最小二乗法を行う
-            for (int j = 0; j < datanum.Length; j++)
+            bool gententooru = true;
+            //最小二乗法を行う(原点を通る時と通らないときで検証)
+            if(gententooru == false)
             {
-                //データのない箇所は除外
-                if (datanum[j] != 0)
+                for (int j = 0; j < datanum.Length; j++)
                 {
-                    a = (datanum[j] * xy_sum[j] - x_sum[j] * y_sum[j]) / (datanum[j] * xx_sum[j] - x_sum[j] * x_sum[j]);
-                    b = (xx_sum[j] * y_sum[j] - x_sum[j] * xy_sum[j]) / (datanum[j] * xx_sum[j] - x_sum[j] * x_sum[j]);
-
-                    if (Double.IsNaN(a) || Double.IsInfinity(a))
+                    //データのない箇所は除外
+                    if (datanum[j] != 0)
                     {
-                        a = 0;
-                        b = 0;
+                        a = (datanum[j] * xy_sum[j] - x_sum[j] * y_sum[j]) / (datanum[j] * xx_sum[j] - x_sum[j] * x_sum[j]);
+                        b = (xx_sum[j] * y_sum[j] - x_sum[j] * xy_sum[j]) / (datanum[j] * xx_sum[j] - x_sum[j] * x_sum[j]);
+
+                        if (Double.IsNaN(a) || Double.IsInfinity(a))
+                        {
+                            a = 0;
+                            b = 0;
+                        }
+
+                        irradiancemap[j, 0] = a;
+                        irradiancemap[j, 1] = b;
+
                     }
+                }
+            }
+            else
+            {
+                for (int j = 0; j < datanum.Length; j++)
+                {
+                    //データのない箇所は除外
+                    if (datanum[j] != 0)
+                    {
+                        a = xy_sum[j] / xx_sum[j];
+                        b = 0;
 
-                    irradiancemap[j, 0] = a;
-                    irradiancemap[j, 1] = b;
+                        if (Double.IsNaN(a) || Double.IsInfinity(a))
+                        {
+                            a = 0;
+                            b = 0;
+                        }
 
+                        irradiancemap[j, 0] = a;
+                        irradiancemap[j, 1] = 0;
+                    }
                 }
             }
 
@@ -1325,6 +1259,116 @@ namespace kinect_test
         }
         /*=============使わなくなった関数=====================================================================================================*/
         #region disused
+
+        //Kmeans法によるクラスタリング（色＋頂点座標に改良予定）
+        private void Km_hsi(double[] hsi, double[,] normaldata, byte[] colorbuffer)
+        {
+            //Cv2.Kmeans;
+            const int CLASS = 16;
+            //色(もともとByte)＋頂点座標(int型)の6chのMat(★float型じゃないとダメ)
+            using (Mat src = new Mat(depthFrameDescription.Width * depthFrameDescription.Height, 1, MatType.CV_32FC(4)))
+            {
+                using (Mat cluster = new Mat())
+                {
+                    using (Mat centers = new Mat(CLASS, 1, MatType.CV_32FC(4)))
+                    {
+                        int i = 0;
+                        long index = 0;
+                        //引数byte[]をKmeans()に適した形にする
+                        for (int y = 0; y < depthFrameDescription.Height; y++)
+                        {
+                            for (int x = 0; x < depthFrameDescription.Width; x++, i++)
+                            {
+                                index = y * depthFrameDescription.Width + x;
+                                if (hsi[i * colorFrameDescription.BytesPerPixel] != 0)
+                                {
+                                    float hue = (float)(hsi[i * colorFrameDescription.BytesPerPixel]);
+                                    src.Set<float>(i, hue);
+                                    /*
+                                    Vec4f vec4f = new Vec4f
+                                    {
+                                        Item0 = (float)(hsi[i * colorFrameDescription.BytesPerPixel] * (180 / Math.PI)) + 90,//色相
+                                        Item1 = (float)(normaldata[index, 0] + 1) * 2,//法線
+                                        Item2 = (float)(normaldata[index, 1] + 1) * 2,
+                                        Item3 = (float)(normaldata[index, 2]) * 2
+                                    };
+                                    src.Set<Vec4f>(i, vec4f);
+                                    */
+                                }
+                            }
+                        }
+
+                        var criteria = new TermCriteria(type: CriteriaType.Eps | CriteriaType.MaxIter, maxCount: 10, epsilon: 1.0);
+                        Cv2.Kmeans(src, CLASS, cluster, criteria, 3, KMeansFlags.PpCenters, centers);
+                        for (int g = 0; g < CLASS; g++) Debug.WriteLine(centers.At<Vec6f>(g));
+                        i = 0;
+                        byte gs = 255 / CLASS;
+                        Mat output = new Mat(depthFrameDescription.Height, depthFrameDescription.Width, MatType.CV_8UC3);
+                        #region centercol
+                        /*
+                        //クラスごとのRGBを格納
+                        int[] sumcolor = new int[CLASS * 3];
+                        int[] classcount = new int[CLASS];
+                        for (int j = 0; j < depthFrameData.Length; i++)
+                        {
+                            int ind = cluster.Get<int>(i);
+                            classcount[ind] += 1;
+                            ind *= 3;
+                            sumcolor[ind] += colorbuffer[j++];//B
+                            sumcolor[ind + 1] += colorbuffer[j++];//G
+                            sumcolor[ind + 2] += colorbuffer[j++];//R
+                        }
+                        byte[] centercol = new byte[CLASS * 3];
+                        for (int k = 0; k < CLASS; k++)
+                        {
+                            int num = k * 3;
+                            centercol[num] = (byte)(sumcolor[num] / classcount[k]);
+                            centercol[num + 1] = (byte)(sumcolor[num + 1] / classcount[k]);
+                            centercol[num + 2] = (byte)(sumcolor[num + 2] / classcount[k]);
+                        }
+                        */
+                        i = 0;
+                        for (int y = 0; y < depthFrameDescription.Height; y++)
+                        {
+                            for (int x = 0; x < depthFrameDescription.Width; x++, i++)
+                            {
+                                //Vec3b col = new Vec3b();
+                                //0～7のクラスが割り当てられている
+                                int ind = cluster.Get<int>(i);
+                                //if (ind > 7 || ind < 0) Debug.WriteLine(ind + "sita");
+                                /*
+                                col[0] = centercol[ind];    //B
+                                col[1] = centercol[ind + 1];//G
+                                col[2] = centercol[ind + 2];//R
+                                */
+
+                                Vec3b col = new Vec3b();
+                                col[0] = (byte)(gs * ind);
+                                col[1] = (byte)(gs * ind);
+                                col[2] = (byte)(gs * ind);
+
+                                /*
+                                int firstComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[0]));
+                                firstComponent = firstComponent > 255 ? 255 : firstComponent < 0 ? 0 : firstComponent;
+                                col[0] = Convert.ToByte(firstComponent);
+                                int secondComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[1]));
+                                secondComponent = secondComponent > 255 ? 255 : secondComponent < 0 ? 0 : secondComponent;
+                                col[1] = Convert.ToByte(secondComponent);
+                                int thirdComponent = Convert.ToInt32(Math.Round(centers.At<Vec3f>(ind)[2]));
+                                thirdComponent = thirdComponent > 255 ? 255 : thirdComponent < 0 ? 0 : thirdComponent;
+                                col[2] = Convert.ToByte(thirdComponent);
+                                //if (i < 20) Debug.WriteLine(col);
+                                */
+                                output.Set<Vec3b>(y, x, col);
+                            }
+                        }
+                        #endregion
+                        //Cv2.ImShow("km_2", output);
+                        //Debug.WriteLine(colorFrameDescription.BytesPerPixel);
+                    }
+                }
+            }
+        }
         //補間関数
         public double[,] Interpolation(double[,] irradiancemap)
         {
@@ -2155,7 +2199,7 @@ namespace kinect_test
             GL.Ext.BindFramebuffer(FramebufferTarget.FramebufferExt, 0); // disable rendering into the FBO
 
             //初期画面背景
-            GL.ClearColor(0.9f, 0.9f, 0.9f, 0f);
+            GL.ClearColor(0.5f, 0.2f, 0.9f, 0f);
             #endregion
 
         }
@@ -2271,18 +2315,17 @@ namespace kinect_test
             GL.BindTexture(TextureTarget.Texture2D, ColorTexture);
 
             //球を描画
-            /*
             GL.BindVertexArray(vao2);
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ibo2);
             GL.DrawElements(BeginMode.Quads, indices2.Length, DrawElementsType.UnsignedInt, 0);
             GL.BindVertexArray(0);
-            */
+            /*
             //1を描画
             GL.BindVertexArray(vao1);
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ibo1);
             GL.DrawElements(BeginMode.Quads, indices1.Length, DrawElementsType.UnsignedInt, 0);
             GL.PopMatrix();
-
+            */
             //Texture
             GL.Color4(Color4.White);
             GL.Begin(BeginMode.Quads);
@@ -2327,7 +2370,7 @@ namespace kinect_test
                     OpenTK.Vector3 normal = new OpenTK.Vector3((float)(x * pWidth), (float)pHeight, (float)(y * pWidth));
                     //OpenTK.Vector2 uv = new OpenTK.Vector2((float)((1 + x * pWidth) / 2), (float)((1 + pHeight) / 2));
                     OpenTK.Vector2 uv = new OpenTK.Vector2((float)((1 + normal.X) / 2), (float)((1 + normal.Y) / 2));
-                    OpenTK.Vector4 color = new OpenTK.Vector4(1.0f, 0.0f, 0.0f, 1.0f);
+                    OpenTK.Vector4 color = new OpenTK.Vector4(0.97f, 0.55f, 0.27f, 1.0f);
                     vertexList.AddLast(new Vertex(position, normal, uv, color));
                 }
             }
@@ -2445,14 +2488,14 @@ namespace kinect_test
             float x = 0, y = 0, z = 0;
             //球面調和関数展開
             float[] clm = new float[9];
+            float max = 0, min = 0;
             //clmを求めていく
             for (int i = 0; i < 9; i++)
             {
                 float sum = 0;
-                float n_data = 0;
                 for (int j = 0; j < MainWindow.irradiancemap.GetLength(0); j++)
                 {
-                    if (MainWindow.irradiancemap[j, 0] != 0 && MainWindow.irradiancemap[j, 1] != 0)
+                    if (MainWindow.irradiancemap[j, 0] != 0 || MainWindow.irradiancemap[j, 1] != 0)
                     {
                         mu = j % MainWindow.map_w;
                         mv = j / MainWindow.map_w;
@@ -2504,15 +2547,19 @@ namespace kinect_test
                         {
                             sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * x * z * sin;
                         }
-                        n_data++;
-
                     }
                 }
+                if (max < sum) max = sum;
+                if (min > sum) min = sum;
                 //これでC_l^mは求まった
-                clm[i] = sum / n_data;
+                clm[i] = sum;
                 Debug.WriteLine(clm[i]);
             }
-            GL.Uniform1(clmLoc, 9, clm);
+            for (int i = 0; i < 9; i++)
+            {
+                clm[i] = clm[i] / (max - min);
+            }
+                GL.Uniform1(clmLoc, 9, clm);
 
             //同じ座標に点が重ねられていて真っ白っぽくなっている（たぶん投影変換のところ）(座標は256✖256)
             GL.PointSize(128);

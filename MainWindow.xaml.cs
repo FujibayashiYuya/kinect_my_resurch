@@ -2315,6 +2315,7 @@ namespace kinect_test
             GL.BindTexture(TextureTarget.Texture2D, ColorTexture);
 
             //球を描画
+            
             GL.BindVertexArray(vao2);
             GL.BindBuffer(BufferTarget.ElementArrayBuffer, ibo2);
             GL.DrawElements(BeginMode.Quads, indices2.Length, DrawElementsType.UnsignedInt, 0);
@@ -2488,11 +2489,11 @@ namespace kinect_test
             float x = 0, y = 0, z = 0;
             //球面調和関数展開
             float[] clm = new float[9];
-            float max = 0, min = 0;
             //clmを求めていく
             for (int i = 0; i < 9; i++)
             {
                 float sum = 0;
+                float ndata = 0;
                 for (int j = 0; j < MainWindow.irradiancemap.GetLength(0); j++)
                 {
                     if (MainWindow.irradiancemap[j, 0] != 0 || MainWindow.irradiancemap[j, 1] != 0)
@@ -2547,19 +2548,14 @@ namespace kinect_test
                         {
                             sum += (float)(MainWindow.irradiancemap[j, 0] + MainWindow.irradiancemap[j, 1]) * shy[i] * x * z * sin;
                         }
+                        ndata++;
                     }
                 }
-                if (max < sum) max = sum;
-                if (min > sum) min = sum;
                 //これでC_l^mは求まった
-                clm[i] = sum;
+                clm[i] = sum / ndata;
                 Debug.WriteLine(clm[i]);
             }
-            for (int i = 0; i < 9; i++)
-            {
-                clm[i] = clm[i] / (max - min);
-            }
-                GL.Uniform1(clmLoc, 9, clm);
+            GL.Uniform1(clmLoc, 9, clm);
 
             //同じ座標に点が重ねられていて真っ白っぽくなっている（たぶん投影変換のところ）(座標は256✖256)
             GL.PointSize(128);
